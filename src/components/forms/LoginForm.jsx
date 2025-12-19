@@ -1,27 +1,11 @@
 import { useState } from "react";
-import { login } from "../api/auth";
 
-export default function LoginForm() {
+export default function LoginForm({ onSubmit, error }) {
     const [userName, setUserName] = useState("");
     const [password, setPassword] = useState("");
-    const [message, setMessage] = useState("");
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-
-        const result = await login(userName, password);
-
-        if (result.success) {
-            localStorage.setItem("token", result.token);
-            setMessage("Zalogowano pomyślnie!");
-            window.location.href = "/"; // przekierowanie np. na stronę główną
-        } else {
-            setMessage(result.message);
-        }
-    };
 
     return (
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form onSubmit={(e) => onSubmit(e, userName, password)} style={styles.form}>
             <input
                 style={styles.input}
                 type="text"
@@ -44,10 +28,11 @@ export default function LoginForm() {
                 Zaloguj się
             </button>
 
-            {message && <p style={styles.message}>{message}</p>}
+            {error && <p style={styles.message}>{error}</p>}
         </form>
     );
 }
+
 
 const styles = {
     form: { display: "flex", flexDirection: "column", gap: 12 },

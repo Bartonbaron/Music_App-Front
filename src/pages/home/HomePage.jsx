@@ -1,7 +1,50 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { usePlayer } from "../../contexts/PlayerContext";
 
 export default function HomePage() {
-    const { user, logout } = useAuth();
+    const { token, user, logout } = useAuth();
+    const { setNewQueue } = usePlayer();
+    const navigate = useNavigate();
+
+    const [songs, setSongs] = useState([]);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (!token) return navigate("/login");
+
+        let alive = true;
+
+        (async () => {
+            try {
+                const res = await fetch("http://localhost:3000/api/songs", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.message || "Failed to fetch songs");
+
+                // normalizacja pod PlayerContext
+                const normalized = (data || []).map((s) => ({
+                    type: "song",
+                    songID: s.songID,
+                    songName: s.songName || s.title,
+                    signedAudio: s.signedAudio,
+                    signedCover: s.signedCover,
+                    raw: s,
+                }));
+
+                if (alive) setSongs(normalized);
+            } catch (e) {
+                if (alive) setError(e.message);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, [token, navigate]);
 
     return (
         <div style={styles.page}>
@@ -13,11 +56,40 @@ export default function HomePage() {
                 </button>
             </header>
 
-            {/* reszta interfejsu */}
+            <div style={styles.section}>
+                <h3 style={styles.title}>Utwory</h3>
+
+                {error && <div style={styles.error}>{error}</div>}
+
+                <div style={styles.grid}>
+                    {songs.map((s, idx) => (
+                        <div key={s.songID} style={styles.card}>
+                            <div style={styles.cardTop}>
+                                {s.signedCover ? (
+                                    <img src={s.signedCover} alt="" style={styles.cover} />
+                                ) : (
+                                    <div style={styles.coverPlaceholder} />
+                                )}
+                            </div>
+
+                            <div style={styles.cardBody}>
+                                <div style={styles.name}>{s.songName || `Utwór ${s.songID}`}</div>
+
+                                <button
+                                    style={styles.playBtn}
+                                    disabled={!s.signedAudio}
+                                    onClick={() => setNewQueue(songs, idx)}
+                                >
+                                    ▶ Odtwórz od tego
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
-
 
 const styles = {
     page: {
@@ -41,26 +113,42 @@ const styles = {
         cursor: "pointer",
         color: "white",
         fontWeight: "bold",
-        marginLeft: "auto"
+        marginLeft: "auto",
     },
-    section: {
-        marginBottom: "40px",
+    section: { marginBottom: "40px" },
+    title: { marginBottom: "15px" },
+
+    error: {
+        background: "#2a1a1a",
+        border: "1px solid #5a2a2a",
+        padding: 12,
+        borderRadius: 10,
+        marginBottom: 12,
     },
-    title: {
-        marginBottom: "15px",
-    },
+
     grid: {
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
         gap: "15px",
     },
     card: {
         backgroundColor: "#1e1e1e",
-        padding: "25px 15px",
+        borderRadius: "12px",
+        overflow: "hidden",
+        border: "1px solid #2a2a2a",
+    },
+    cardTop: { height: 160, background: "#2a2a2a" },
+    cover: { width: "100%", height: "100%", objectFit: "cover" },
+    coverPlaceholder: { width: "100%", height: "100%", background: "#2a2a2a" },
+    cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 10 },
+    name: { fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+    playBtn: {
+        padding: "10px 12px",
         borderRadius: "10px",
-        textAlign: "center",
+        border: "none",
+        background: "#1db954",
+        color: "#000",
+        fontWeight: 800,
         cursor: "pointer",
-        transition: "0.2s",
     },
 };
-

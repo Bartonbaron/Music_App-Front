@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { usePlayer } from "../../contexts/PlayerContext";
+import {
+    Play,
+    Pause,
+    StepBack,
+    StepForward,
+    Shuffle,
+    Repeat,
+    Zap,
+    Music2,
+    Mic2,
+    Volume2,
+} from "lucide-react";
 
 function formatTime(sec) {
     if (sec == null || Number.isNaN(sec)) return "0:00";
@@ -9,42 +21,56 @@ function formatTime(sec) {
     return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+function withDisabled(baseStyle, disabled) {
+    if (!disabled) return baseStyle;
+    return {
+        ...baseStyle,
+        opacity: 0.35,
+        cursor: "not-allowed",
+        pointerEvents: "auto",
+    };
+}
+
+function modeBtnStyle(active, disabled) {
+    const base = {
+        height: 34,
+        minWidth: 34,
+        padding: "0 10px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: active ? "#1db954" : "transparent",
+        color: active ? "#000" : "#fff",
+        cursor: "pointer",
+        fontWeight: 900,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        lineHeight: 1,
+        gap: 6,
+    };
+    return withDisabled(base, disabled);
+}
+
 export default function PlayerBar() {
     const {
-        audio,
         currentItem,
         isPlaying,
         progress,
+        duration,
         togglePlay,
         playNext,
         playPrevious,
         seek,
         volume,
         changeVolume,
+
+        autoplay,
+        toggleAutoplay,
+        playbackMode,
+        changePlaybackMode,
     } = usePlayer();
 
-    const [durationState, setDurationState] = useState(0);
-
-    useEffect(() => {
-        if (!audio) return;
-
-        const updateDuration = () => {
-            const d = Number.isFinite(audio.duration) ? audio.duration : 0;
-            setDurationState(d);
-        };
-
-        audio.addEventListener("loadedmetadata", updateDuration);
-        audio.addEventListener("durationchange", updateDuration);
-
-        // na wypadek gdyby metadane były już dostępne
-        updateDuration();
-
-        return () => {
-            audio.removeEventListener("loadedmetadata", updateDuration);
-            audio.removeEventListener("durationchange", updateDuration);
-        };
-    }, [audio]);
-
+    console.log("StepBack:", StepBack, "SkipForward:", StepForward);
 
     const title = useMemo(() => {
         if (!currentItem) return "Nic nie gra";
@@ -57,12 +83,15 @@ export default function PlayerBar() {
         );
     }, [currentItem]);
 
-    const duration = durationState;
+    const typeLabel = currentItem?.type === "podcast" ? "Podcast" : currentItem ? "Utwór" : "";
+    const canInteract = !!currentItem;
+    const canSeek = !!currentItem && duration > 0;
 
     const percent = duration > 0 ? Math.min(100, Math.max(0, (progress / duration) * 100)) : 0;
 
     return (
         <div style={styles.bar}>
+            {/* LEFT */}
             <div style={styles.left}>
                 <div style={styles.cover}>
                     {currentItem?.signedCover ? (
@@ -74,58 +103,125 @@ export default function PlayerBar() {
 
                 <div style={styles.meta}>
                     <div style={styles.title}>{title}</div>
+
                     <div style={styles.sub}>
-                        {currentItem ? (currentItem.type === "podcast" ? "Podcast" : "Utwór") : ""}
+                        {currentItem?.type === "podcast" ? (
+                            <span style={styles.subRow}>
+                <Mic2 size={14} style={{ opacity: 0.85 }} />
+                <span>{typeLabel}</span>
+              </span>
+                        ) : currentItem ? (
+                            <span style={styles.subRow}>
+                <Music2 size={14} style={{ opacity: 0.85 }} />
+                <span>{typeLabel}</span>
+              </span>
+                        ) : (
+                            ""
+                        )}
                     </div>
                 </div>
             </div>
 
+            {/* CENTER */}
             <div style={styles.center}>
                 <div style={styles.controls}>
-                    <button style={styles.ctrlBtn} onClick={playPrevious} disabled={!currentItem}>
-                        ⏮
+                    {/* Prev */}
+                    <button
+                        style={{ ...styles.iconBtn, ...( !currentItem ? styles.disabledBtn : null ) }}
+                        onClick={playPrevious}
+                        disabled={!currentItem}
+                        title="Poprzedni"
+                        >
+                        <StepBack size={18} style={{ display: "block" }} stroke="#fff" />
                     </button>
 
-                    <button style={styles.playBtn} onClick={togglePlay} disabled={!currentItem}>
-                        {isPlaying ? "⏸" : "▶"}
+                    {/* Play/Pause */}
+                    <button
+                        onClick={togglePlay}
+                        disabled={!canInteract}
+                        title={isPlaying ? "Pauza" : "Odtwórz"}
+                        style={withDisabled(styles.playBtn, !canInteract)}
+                    >
+                        {isPlaying ? <Pause size={18} /> : <Play size={18} />}
                     </button>
 
-                    <button style={styles.ctrlBtn} onClick={playNext} disabled={!currentItem}>
-                        ⏭
+                    {/* Next */}
+                    <button
+                        style={{ ...styles.iconBtn, ...( !currentItem ? styles.disabledBtn : null ) }}
+                        onClick={playNext}
+                        disabled={!currentItem}
+                        title="Następny"
+                    >
+                        <StepForward size={18} style={{ display: "block" }} stroke="#fff" />
                     </button>
+
+                    {/* Modes */}
+                    <div style={styles.modes}>
+                        <button
+                            style={modeBtnStyle(playbackMode === "normal", !canInteract)}
+                            onClick={() => changePlaybackMode("normal")}
+                            disabled={!canInteract}
+                            title="Normal"
+                        >
+                            N
+                        </button>
+
+                        <button
+                            style={modeBtnStyle(playbackMode === "shuffle", !canInteract)}
+                            onClick={() => changePlaybackMode("shuffle")}
+                            disabled={!canInteract}
+                            title="Shuffle"
+                        >
+                            <Shuffle size={16} />
+                        </button>
+
+                        <button
+                            style={modeBtnStyle(playbackMode === "repeat", !canInteract)}
+                            onClick={() => changePlaybackMode("repeat")}
+                            disabled={!canInteract}
+                            title="Repeat"
+                        >
+                            <Repeat size={16} />
+                        </button>
+
+                        <button
+                            style={modeBtnStyle(autoplay, !canInteract)}
+                            onClick={toggleAutoplay}
+                            disabled={!canInteract}
+                            title="Autoplay"
+                        >
+                            <Zap size={16} />
+                        </button>
+                    </div>
                 </div>
 
+                {/* Timeline */}
                 <div style={styles.timeline}>
                     <span style={styles.time}>{formatTime(progress)}</span>
 
                     <div style={styles.progressWrap}>
-                        {/* wizualne wypełnienie */}
-                        <div
-                            style={{
-                                ...styles.progressFill,
-                                width: `${percent}%`,
-                            }}
-                        />
+                        <div style={styles.progressTrack} />
+                        <div style={{ ...styles.progressFill, width: `${percent}%` }} />
 
-                        {/* suwak do seekowania (nakładka) */}
                         <input
                             type="range"
                             min={0}
                             max={duration || 0}
                             value={Math.min(progress || 0, duration || 0)}
-                            onChange={(e) => seek(Number(e.target.value))}
-                            disabled={!currentItem || !duration}
+                            onInput={(e) => seek(Number(e.target.value))}
+                            disabled={!canSeek}
                             style={styles.progressRange}
                         />
                     </div>
 
                     <span style={styles.time}>{formatTime(duration)}</span>
                 </div>
-
             </div>
 
+            {/* RIGHT */}
             <div style={styles.right}>
-                <span style={{ opacity: 0.8 }}>🔊</span>
+                <Volume2 size={16} style={{ opacity: 0.8 }} />
+
                 <input
                     type="range"
                     min={0}
@@ -133,7 +229,7 @@ export default function PlayerBar() {
                     step={0.01}
                     value={volume ?? 1}
                     onChange={(e) => changeVolume(Number(e.target.value))}
-                    style={{ width: 140 }}
+                    style={styles.volumeRange}
                 />
             </div>
         </div>
@@ -146,7 +242,7 @@ const styles = {
         left: 0,
         right: 0,
         bottom: 0,
-        height: 80,
+        height: 92,
         background: "#181818",
         borderTop: "1px solid #2a2a2a",
         display: "grid",
@@ -156,50 +252,81 @@ const styles = {
         gap: 12,
         zIndex: 50,
     },
+
     left: { display: "flex", alignItems: "center", gap: 12 },
     cover: { width: 54, height: 54, borderRadius: 8, overflow: "hidden", background: "#2a2a2a" },
     coverImg: { width: "100%", height: "100%", objectFit: "cover" },
     coverPlaceholder: { width: "100%", height: "100%", background: "#2a2a2a" },
     meta: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
     title: { fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-    sub: { fontSize: 12, opacity: 0.7 },
+    sub: { fontSize: 12, opacity: 0.75 },
+    subRow: { display: "inline-flex", alignItems: "center", gap: 6 },
 
     center: { display: "flex", flexDirection: "column", gap: 6, alignItems: "center" },
-    controls: { display: "flex", gap: 10, alignItems: "center" },
-    ctrlBtn: {
-        padding: "6px 10px",
+    controls: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        flexWrap: "wrap",
+        justifyContent: "center",
+    },
+
+    iconBtn: {
+        height: 36,
+        width: 40,
         background: "transparent",
-        color: "white",
+        color: "#fff",
         border: "1px solid #333",
-        borderRadius: 8,
+        borderRadius: 10,
         cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    disabledBtn: {
+        opacity: 0.35,
+        cursor: "not-allowed",
     },
     playBtn: {
-        padding: "8px 14px",
+        height: 38,
+        width: 52,
         background: "#1db954",
         color: "#000",
         border: "none",
         borderRadius: 999,
         fontWeight: 800,
         cursor: "pointer",
-        minWidth: 56,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
     },
 
-    timeline: { display: "flex", gap: 10, alignItems: "center", width: "100%", maxWidth: 520 },
+    modes: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        marginLeft: 6,
+    },
+
+    timeline: { display: "flex", gap: 10, alignItems: "center", width: "100%", maxWidth: 560 },
     time: { fontSize: 12, opacity: 0.75, width: 44, textAlign: "center" },
-    range: { flex: 1 },
 
     right: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 },
+    volumeRange: { width: 140 },
 
     progressWrap: {
         position: "relative",
         flex: 1,
         height: 10,
         borderRadius: 999,
-        background: "#2a2a2a",
         overflow: "hidden",
     },
-
+    progressTrack: {
+        position: "absolute",
+        inset: 0,
+        background: "#2a2a2a",
+        zIndex: 0,
+    },
     progressFill: {
         position: "absolute",
         left: 0,
@@ -207,17 +334,18 @@ const styles = {
         bottom: 0,
         background: "#1db954",
         borderRadius: 999,
-        transition: "width 0.15s linear", // “płynne przesuwanie”
+        transition: "width 0.15s linear",
+        zIndex: 1,
     },
-
     progressRange: {
         position: "absolute",
-        left: 0,
-        top: 0,
+        inset: 0,
         width: "100%",
         height: "100%",
         margin: 0,
         opacity: 0,
         cursor: "pointer",
+        zIndex: 2,
+        pointerEvents: "auto",
     },
 };

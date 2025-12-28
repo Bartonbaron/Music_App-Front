@@ -30,10 +30,6 @@ html, body, #root {
 
 body {
   background-color: #121212;
-  display: flex;
-  place-content: center;
-  justify-content: center;
-  align-items: center;
 }
 
 h1 {
@@ -58,6 +54,20 @@ button:hover {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+svg.lucide * {
+  stroke: white !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+svg.lucide {
+  width: 1em !important;
+  height: 1em !important;
+  min-width: 1em !important;
+  min-height: 1em !important;
+  flex: 0 0 auto !important;
 }
 
 @media (prefers-color-scheme: light) {

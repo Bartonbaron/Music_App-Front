@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formStyles as styles } from "../../styles/formStyles";
 
 export default function LoginForm({ onSubmit, error }) {
     const [userName, setUserName] = useState("");
@@ -32,24 +33,3 @@ export default function LoginForm({ onSubmit, error }) {
         </form>
     );
 }
-
-
-const styles = {
-    form: { display: "flex", flexDirection: "column", gap: 12 },
-    input: {
-        padding: "10px 14px",
-        borderRadius: 6,
-        border: "1px solid #555",
-        background: "#2a2a2a",
-        color: "#fff",
-    },
-    button: {
-        padding: "10px 14px",
-        borderRadius: 6,
-        border: "none",
-        background: "#1db954",
-        color: "#000",
-        cursor: "pointer",
-    },
-    message: { color: "#fff", marginTop: 10 },
-};

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import LoginForm from "../../components/forms/LoginForm";
 import { useAuth } from "../../contexts/AuthContext";
+import { Link } from "react-router-dom";
 
 export default function LoginPage() {
     const [error, setError] = useState("");
@@ -21,6 +22,10 @@ export default function LoginPage() {
             <div style={styles.card}>
                 <h2>Logowanie</h2>
                 <LoginForm onSubmit={handleLogin} error={error} />
+                <p style={styles.footer}>
+                    Nie masz konta?{" "}
+                    <Link to="/register">Utwórz konto</Link>
+                </p>
             </div>
         </div>
     );
@@ -41,26 +46,5 @@ const styles = {
         width: "350px",
         color: "white",
         boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-    },
-    form: {
-        display: "flex",
-        flexDirection: "column",
-        gap: "15px",
-    },
-    input: {
-        padding: "12px",
-        borderRadius: "6px",
-        border: "none",
-        backgroundColor: "#333",
-        color: "white",
-    },
-    button: {
-        padding: "12px",
-        borderRadius: "6px",
-        border: "none",
-        backgroundColor: "#09A9ED",
-        color: "white",
-        fontWeight: "bold",
-        cursor: "pointer",
-    },
+    }
 };

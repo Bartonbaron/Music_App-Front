@@ -9,6 +9,7 @@ import { PlayerProvider } from "./contexts/PlayerContext";
 
 import "./index.css";
 
+import RegisterPage from "./pages/auth/RegisterPage.jsx";
 import LoginPage from "./pages/auth/LoginPage.jsx";
 import HomePage from "./pages/home/HomePage.jsx";
 import AppLayout from "./components/layout/AppLayout.jsx";
@@ -19,6 +20,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <AuthProvider>
                 <PlayerProvider>
                     <Routes>
+                        <Route path="/register" element={<RegisterPage />} />
                         <Route path="/login" element={<LoginPage />} />
 
                         {/* zabezpieczone */}

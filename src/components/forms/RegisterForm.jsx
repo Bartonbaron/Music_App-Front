@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { register } from "../../api/auth.api";
 import { useNavigate } from "react-router-dom";
 import { formStyles as styles } from "../../styles/formStyles";
@@ -7,23 +7,39 @@ export default function RegisterForm() {
     const [userName, setUserName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [message, setMessage] = useState("");
+
+    const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
+
     const [loading, setLoading] = useState(false);
 
     const navigate = useNavigate();
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setMessage("");
+        if (loading) return;
 
-        const result = await register(userName, password, email);
+        setLoading(true);
+        setError("");
+        setSuccess("");
+
+        // email optional: jeśli puste -> undefined
+        const emailValue = email.trim() ? email.trim() : undefined;
+
+        const result = await register(userName.trim(), password, emailValue);
 
         if (result.success) {
-            setMessage("Konto utworzone! Możesz się zalogować.");
-            setTimeout(() => navigate("/login"), 1200);
+            setSuccess("Konto utworzone! Możesz się zalogować.");
+            timerRef.current = setTimeout(() => navigate("/login"), 800);
         } else {
-            setMessage(result.message);
+            setError(result.message || "Błąd rejestracji");
         }
 
         setLoading(false);
@@ -61,7 +77,8 @@ export default function RegisterForm() {
                 {loading ? "Rejestracja..." : "Zarejestruj się"}
             </button>
 
-            {message && <p style={styles.message}>{message}</p>}
+            {error && <p style={styles.message}>{error}</p>}
+            {success && <p style={styles.message}>{success}</p>}
         </form>
     );
 }

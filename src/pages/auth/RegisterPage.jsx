@@ -1,7 +1,11 @@
 import RegisterForm from "../../components/forms/RegisterForm";
-import { Link } from "react-router-dom";
+import {Link, Navigate} from "react-router-dom";
+import {useAuth} from "../../contexts/AuthContext.jsx";
 
 export default function RegisterPage() {
+    const { token } = useAuth();
+    if (token) return <Navigate to="/home" replace />;
+
     return (
         <div style={styles.page}>
             <div style={styles.card}>
@@ -30,5 +34,6 @@ const styles = {
         borderRadius: 12,
         width: 360,
         color: "white",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
     },
 };

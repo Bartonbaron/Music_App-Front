@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { formStyles as styles } from "../../styles/formStyles";
 
-export default function LoginForm({ onSubmit, error }) {
+export default function LoginForm({ onSubmit, error, loading = false }) {
     const [userName, setUserName] = useState("");
     const [password, setPassword] = useState("");
 
     return (
-        <form onSubmit={(e) => onSubmit(e, userName, password)} style={styles.form}>
+        <form onSubmit={(e) => onSubmit(e, userName.trim(), password)} style={styles.form}>
             <input
                 style={styles.input}
                 type="text"
@@ -14,6 +14,7 @@ export default function LoginForm({ onSubmit, error }) {
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 required
+                disabled={loading}
             />
 
             <input
@@ -23,10 +24,11 @@ export default function LoginForm({ onSubmit, error }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={loading}
             />
 
-            <button style={styles.button} type="submit">
-                Zaloguj się
+            <button style={styles.button} type="submit" disabled={loading}>
+                {loading ? "Logowanie..." : "Zaloguj się"}
             </button>
 
             {error && <p style={styles.message}>{error}</p>}

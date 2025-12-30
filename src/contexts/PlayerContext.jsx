@@ -72,6 +72,27 @@ export function PlayerProvider({ children }) {
         setIsPlaying(false);
     }, []);
 
+    const stopAndReset = useCallback(() => {
+        const audio = audioRef.current;
+
+        audio.pause();
+        audio.currentTime = 0;
+
+        audio.src = "";
+        audio.load();
+
+        setIsPlaying(false);
+        setProgress(0);
+        setDuration(0);
+        setCurrentItem(null);
+
+        setQueue([]);
+        setQueueIndex(0);
+
+        originalQueueRef.current = [];
+    }, []);
+
+
     const extractSignedAudio = (item) =>
         item?.signedAudio ||
         item?.signedUrl ||
@@ -338,6 +359,13 @@ export function PlayerProvider({ children }) {
         },
         [token]
     );
+
+    useEffect(() => {
+        if (!token) {
+            stopAndReset();
+            if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
+        }
+    }, [token, stopAndReset]);
 
     const changeVolume = useCallback(
         (value) => {

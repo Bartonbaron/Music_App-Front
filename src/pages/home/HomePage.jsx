@@ -12,7 +12,7 @@ export default function HomePage() {
     const [error, setError] = useState("");
 
     useEffect(() => {
-        if (!token) return navigate("/login");
+        if (!token) return;
 
         let alive = true;
 
@@ -25,8 +25,7 @@ export default function HomePage() {
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.message || "Failed to fetch songs");
 
-                // normalizacja pod PlayerContext
-                const normalized = (data || []).map((s) => ({
+                const normalized = (Array.isArray(data) ? data : []).map((s) => ({
                     type: "song",
                     songID: s.songID,
                     songName: s.songName || s.title,
@@ -44,14 +43,19 @@ export default function HomePage() {
         return () => {
             alive = false;
         };
-    }, [token, navigate]);
+    }, [token]);
+
+    const handleLogout = () => {
+        logout();
+        navigate("/login");
+    };
 
     return (
         <div style={styles.page}>
             <header style={styles.header}>
                 <h2>Witaj{user ? `, ${user.userName}` : ""}!</h2>
 
-                <button style={styles.logoutBtn} onClick={logout}>
+                <button style={styles.logoutBtn} onClick={handleLogout}>
                     Wyloguj
                 </button>
             </header>
@@ -76,7 +80,11 @@ export default function HomePage() {
                                 <div style={styles.name}>{s.songName || `Utwór ${s.songID}`}</div>
 
                                 <button
-                                    style={styles.playBtn}
+                                    style={{
+                                        ...styles.playBtn,
+                                        opacity: s.signedAudio ? 1 : 0.5,
+                                        cursor: s.signedAudio ? "pointer" : "not-allowed",
+                                    }}
                                     disabled={!s.signedAudio}
                                     onClick={() => setNewQueue(songs, idx)}
                                 >
@@ -149,6 +157,5 @@ const styles = {
         background: "#1db954",
         color: "#000",
         fontWeight: 800,
-        cursor: "pointer",
     },
 };

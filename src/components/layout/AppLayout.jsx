@@ -3,7 +3,11 @@ import { useAuth } from "../../contexts/AuthContext";
 import PlayerBar from "../player/PlayerBar";
 
 export default function AppLayout() {
-    const { token } = useAuth();
+    const { token, loading } = useAuth();
+
+    if (loading) {
+        return <div style={{ color: "white", padding: 20 }}>Ładowanie...</div>;
+    }
 
     if (!token) return <Navigate to="/login" replace />;
 
@@ -12,7 +16,6 @@ export default function AppLayout() {
             <div style={styles.content}>
                 <Outlet />
             </div>
-
             <PlayerBar />
         </div>
     );

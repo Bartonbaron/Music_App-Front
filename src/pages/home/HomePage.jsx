@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 
 export default function HomePage() {
     const { token, user, logout } = useAuth();
     const { setNewQueue } = usePlayer();
-    const navigate = useNavigate();
 
     const [songs, setSongs] = useState([]);
     const [error, setError] = useState("");
@@ -28,7 +26,9 @@ export default function HomePage() {
                 const normalized = (Array.isArray(data) ? data : []).map((s) => ({
                     type: "song",
                     songID: s.songID,
-                    songName: s.songName || s.title,
+                    songName: s.songName,
+                    title: s.songName,
+                    creatorName: s.creatorName || null,
                     signedAudio: s.signedAudio,
                     signedCover: s.signedCover,
                     raw: s,
@@ -45,17 +45,17 @@ export default function HomePage() {
         };
     }, [token]);
 
-    const handleLogout = () => {
-        logout();
-        navigate("/login");
-    };
+    const queueItems = useMemo(
+        () => songs.filter((x) => !!x.signedAudio),
+        [songs]
+    );
 
     return (
         <div style={styles.page}>
             <header style={styles.header}>
                 <h2>Witaj{user ? `, ${user.userName}` : ""}!</h2>
 
-                <button style={styles.logoutBtn} onClick={handleLogout}>
+                <button style={styles.logoutBtn} onClick={logout}>
                     Wyloguj
                 </button>
             </header>
@@ -66,7 +66,7 @@ export default function HomePage() {
                 {error && <div style={styles.error}>{error}</div>}
 
                 <div style={styles.grid}>
-                    {songs.map((s, idx) => (
+                    {songs.map((s) => (
                         <div key={s.songID} style={styles.card}>
                             <div style={styles.cardTop}>
                                 {s.signedCover ? (
@@ -79,6 +79,10 @@ export default function HomePage() {
                             <div style={styles.cardBody}>
                                 <div style={styles.name}>{s.songName || `Utwór ${s.songID}`}</div>
 
+                                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                    {s.creatorName || "—"}
+                                </div>
+
                                 <button
                                     style={{
                                         ...styles.playBtn,
@@ -86,7 +90,12 @@ export default function HomePage() {
                                         cursor: s.signedAudio ? "pointer" : "not-allowed",
                                     }}
                                     disabled={!s.signedAudio}
-                                    onClick={() => setNewQueue(songs, idx)}
+                                    onClick={() => {
+                                        const startIdx = queueItems.findIndex(
+                                            (q) => q.songID === s.songID
+                                        );
+                                        if (startIdx >= 0) setNewQueue(queueItems, startIdx);
+                                    }}
                                 >
                                     ▶ Odtwórz od tego
                                 </button>

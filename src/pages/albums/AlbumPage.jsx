@@ -3,6 +3,28 @@ import { useParams } from "react-router-dom";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatTotalDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+
+    if (h > 0) {
+        return `${h} godz. ${m} min`;
+    }
+
+    return `${m} min`;
+}
+
 export default function AlbumPage() {
     const { id } = useParams();
     const { setNewQueue } = usePlayer();
@@ -11,6 +33,12 @@ export default function AlbumPage() {
     const [songs, setSongs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
+
+    const totalDuration = useMemo(() => {
+        return songs.reduce((sum, s) => {
+            return sum + (Number(s.duration) || 0);
+        }, 0);
+    }, [songs]);
 
     useEffect(() => {
         const token = localStorage.getItem("token");
@@ -48,15 +76,33 @@ export default function AlbumPage() {
         })();
     }, [id]);
 
-    const queueItems = useMemo(
-        () => songs.map(mapSongToPlayerItem).filter((x) => !!x.signedAudio),
-        [songs]
-    );
+    const queueItems = useMemo(() => {
+        const albumCover = album?.signedCover || null;
+
+        const albumArtist = album?.creator?.user?.userName || null;
+
+        return songs
+            .map((s) => {
+                const item = mapSongToPlayerItem(s);
+
+                return {
+                    ...item,
+                    // cover: album > track
+                    signedCover: albumCover || item.signedCover,
+                    // creator: album > track
+                    creatorName: albumArtist || item.creatorName || null,
+                };
+            })
+            .filter((x) => !!x.signedAudio);
+    }, [songs, album]);
 
     const playAlbum = () => setNewQueue(queueItems, 0);
 
     if (loading) return <div style={{ padding: 20, color: "white" }}>Ładowanie…</div>;
     if (msg) return <div style={{ padding: 20, color: "white" }}>{msg}</div>;
+
+    const albumCover = album?.signedCover || null;
+    const albumArtist = album?.creator?.user?.userName || null;
 
     return (
         <div style={{ padding: 20, color: "white", paddingBottom: 120 }}>
@@ -71,9 +117,9 @@ export default function AlbumPage() {
                         flex: "0 0 auto",
                     }}
                 >
-                    {album?.signedCover ? (
+                    {albumCover ? (
                         <img
-                            src={album.signedCover}
+                            src={albumCover}
                             alt="cover"
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
                         />
@@ -83,8 +129,13 @@ export default function AlbumPage() {
                 <div style={{ minWidth: 0 }}>
                     <div style={{ opacity: 0.7, fontSize: 12 }}>ALBUM</div>
                     <h2 style={{ margin: "6px 0 8px" }}>{album?.albumName || "Album"}</h2>
+
+                    <div style={{ opacity: 0.6, fontSize: 12 }}>
+                        {songs.length} utworów • {formatTotalDuration(totalDuration)}
+                    </div>
+
                     <div style={{ opacity: 0.8, fontSize: 13 }}>
-                        {album?.creator?.userID ? `Twórca ID: ${album.creator.userID}` : ""}
+                        {albumArtist || ""}
                     </div>
 
                     <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -107,16 +158,32 @@ export default function AlbumPage() {
                             borderBottom: "1px solid #2a2a2a",
                         }}
                     >
-                        <button onClick={() => setNewQueue(queueItems, idx)} disabled={!queueItems.length}>
+                        <button
+                            onClick={() => setNewQueue(queueItems, idx)}
+                            disabled={!queueItems.length}
+                            title="Odtwórz od tego"
+                        >
                             ▶
                         </button>
-                        <div style={{ width: 32, opacity: 0.7, textAlign: "right" }}>{s.trackNumber ?? idx + 1}.</div>
+
+                        <div style={{ width: 32, opacity: 0.7, textAlign: "right" }}>
+                            {s.trackNumber ?? idx + 1}.
+                        </div>
+
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <div
+                                style={{
+                                    fontWeight: 600,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                }}
+                            >
                                 {s.songName}
                             </div>
+
                             <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                {s.duration ? `${Math.round(s.duration)}s` : ""}
+                                {formatDuration(s.duration)}
                             </div>
                         </div>
                     </div>
@@ -125,4 +192,3 @@ export default function AlbumPage() {
         </div>
     );
 }
-

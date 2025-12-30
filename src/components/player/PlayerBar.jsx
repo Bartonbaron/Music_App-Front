@@ -70,7 +70,7 @@ export default function PlayerBar() {
         changePlaybackMode,
     } = usePlayer();
 
-    console.log("StepBack:", StepBack, "SkipForward:", StepForward);
+    console.log("StepBack:", StepBack, "StepForward:", StepForward);
 
     const title = useMemo(() => {
         if (!currentItem) return "Nic nie gra";
@@ -84,6 +84,7 @@ export default function PlayerBar() {
     }, [currentItem]);
 
     const typeLabel = currentItem?.type === "podcast" ? "Podcast" : currentItem ? "Utwór" : "";
+
     const canInteract = !!currentItem;
     const canSeek = !!currentItem && duration > 0;
 
@@ -95,7 +96,11 @@ export default function PlayerBar() {
             <div style={styles.left}>
                 <div style={styles.cover}>
                     {currentItem?.signedCover ? (
-                        <img src={currentItem.signedCover} alt="cover" style={styles.coverImg} />
+                        <img
+                            src={currentItem.signedCover}
+                            alt="cover"
+                            style={styles.coverImg}
+                        />
                     ) : (
                         <div style={styles.coverPlaceholder} />
                     )}
@@ -104,21 +109,23 @@ export default function PlayerBar() {
                 <div style={styles.meta}>
                     <div style={styles.title}>{title}</div>
 
-                    <div style={styles.sub}>
-                        {currentItem?.type === "podcast" ? (
-                            <span style={styles.subRow}>
+                    {/* subtitle: typ + autor */}
+                    {currentItem ? (
+                        <div style={styles.sub}>
+          <span style={styles.subRow}>
+            {currentItem.type === "podcast" ? (
                 <Mic2 size={14} style={{ opacity: 0.85 }} />
-                <span>{typeLabel}</span>
-              </span>
-                        ) : currentItem ? (
-                            <span style={styles.subRow}>
+            ) : (
                 <Music2 size={14} style={{ opacity: 0.85 }} />
-                <span>{typeLabel}</span>
-              </span>
-                        ) : (
-                            ""
-                        )}
-                    </div>
+            )}
+
+              <span>
+              {typeLabel}
+                  {currentItem.creatorName ? ` • ${currentItem.creatorName}` : ""}
+            </span>
+          </span>
+                        </div>
+                    ) : null}
                 </div>
             </div>
 

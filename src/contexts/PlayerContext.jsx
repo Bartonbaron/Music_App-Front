@@ -27,6 +27,8 @@ export function PlayerProvider({ children }) {
     const [queue, setQueue] = useState([]);
     const [queueIndex, setQueueIndex] = useState(0);
 
+    const PREV_RESTART_THRESHOLD = 2; // sekundy
+
     // preferencje
     const [volume, setVolume] = useState(1);
     const [playbackMode, setPlaybackMode] = useState("normal"); // normal | shuffle | repeat
@@ -216,6 +218,17 @@ export function PlayerProvider({ children }) {
     }, [loadItem]);
 
     const playPrevious = useCallback(() => {
+        const audio = audioRef.current;
+
+        // Jeśli minęło więcej niż x sekund to restart obecnego utworu
+        if (audio && Number.isFinite(audio.currentTime) && audio.currentTime > PREV_RESTART_THRESHOLD) {
+            audio.currentTime = 0;
+            setProgress(0);
+            // jeśli było pauzowane, nie wymuszamy odtwarzania
+            return;
+        }
+
+        // inaczej normalnie do poprzedniego w kolejce
         setQueueIndex((prev) => {
             const q = queueRef.current;
             if (!q.length) return prev;
@@ -223,6 +236,7 @@ export function PlayerProvider({ children }) {
             const prevIndex = prev - 1;
 
             if (prevIndex < 0) {
+                // jesteśmy na początku kolejki -> restart pierwszego
                 loadItem(q[0], autoplayRef.current);
                 return 0;
             }

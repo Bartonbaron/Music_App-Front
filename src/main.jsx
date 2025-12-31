@@ -5,6 +5,7 @@ import PublicOnlyRoute from "./components/common/PublicOnlyRoute";
 
 import { AuthProvider } from "./contexts/AuthContext";
 import { PlayerProvider } from "./contexts/PlayerContext";
+import { LibraryProvider } from "./contexts/LibraryContext.jsx";
 
 import AppLayout from "./components/layout/AppLayout";
 
@@ -13,6 +14,7 @@ import RegisterPage from "./pages/auth/RegisterPage";
 import HomePage from "./pages/home/HomePage";
 import TestPlayerPage from "./pages/TestPlayerPage";
 import AlbumPage from "./pages/albums/AlbumPage";
+import PlaylistPage from "./pages/playlists/PlaylistPage.jsx";
 
 import "./index.css";
 
@@ -21,6 +23,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <BrowserRouter>
             <AuthProvider>
                 <PlayerProvider>
+                    <LibraryProvider>
                     <Routes>
                         {/* publiczne */}
                         <Route element={<PublicOnlyRoute />}>
@@ -32,13 +35,16 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                         <Route element={<AppLayout />}>
                             <Route path="/home" element={<HomePage />} />
                             <Route path="/test-player" element={<TestPlayerPage />} />
+                            <Route path="/playlists/:id" element={<PlaylistPage />} />
                             <Route path="/albums/:id" element={<AlbumPage />} />
+                            <Route path="/library" element={<HomePage />} />
                         </Route>
 
                         {/* domyślne */}
                         <Route path="/" element={<Navigate to="/home" replace />} />
                         <Route path="*" element={<Navigate to="/home" replace />} />
                     </Routes>
+                    </LibraryProvider>
                 </PlayerProvider>
             </AuthProvider>
         </BrowserRouter>

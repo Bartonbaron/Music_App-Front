@@ -17,6 +17,11 @@ export function PlayerProvider({ children }) {
     const audioRef = useRef(new Audio());
     const prefsTimerRef = useRef(null);
 
+    // stream counter refs
+    const streamTimerRef = useRef(null);
+    const countedStreamKeyRef = useRef(null); // żeby nie liczyć wielokrotnie w ramach jednego odtworzenia
+    const STREAM_AFTER_SECONDS = 10;
+
     // stan odtwarzacza
     const [currentItem, setCurrentItem] = useState(null); // { type, songID/podcastID, signedAudio, signedCover, ... }
     const [isPlaying, setIsPlaying] = useState(false);
@@ -59,20 +64,95 @@ export function PlayerProvider({ children }) {
     const playNextRef = useRef(null);
 
     // helpers
+    const extractSignedAudio = (item) =>
+        item?.signedAudio ||
+        item?.signedUrl ||
+        item?.audioURL ||
+        item?.fileURL ||
+        null;
+
+    const extractSignedCover = (item) =>
+        item?.signedCover || item?.coverSigned || item?.coverURL || null;
+
+    const keyOf = (x) =>
+        x?.songID ? `s:${x.songID}` : x?.podcastID ? `p:${x.podcastID}` : null;
+
+    // ---------------- STREAM COUNT (10s) ----------------
+    const clearStreamTimer = useCallback(() => {
+        if (streamTimerRef.current) {
+            clearTimeout(streamTimerRef.current);
+            streamTimerRef.current = null;
+        }
+    }, []);
+
+    const sendStream = useCallback(
+        async (item) => {
+            if (!token) return;
+            if (!item) return;
+
+            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            if (type !== "song") return;
+
+            const songID = item?.songID;
+            if (!songID) return;
+
+            try {
+                await fetch(`http://localhost:3000/api/songs/${songID}/stream`, {
+                    method: "PATCH",
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                // eslint-disable-next-line no-unused-vars
+            } catch (_) {/**/
+            }
+        },
+        [token]
+    );
+
+    const scheduleStreamAfter10s = useCallback(
+        (item) => {
+            clearStreamTimer();
+
+            const key = keyOf(item);
+            if (!key) return;
+
+            // nie licz ponownie dla tego samego itemu w ramach "tego odtworzenia"
+            if (countedStreamKeyRef.current === key) return;
+
+            streamTimerRef.current = setTimeout(() => {
+                // warunek: nadal gramy i nadal ten sam item
+                const cur = currentItemRef.current;
+                const stillSame = keyOf(cur) === key;
+
+                if (stillSame && audioRef.current && !audioRef.current.paused) {
+                    countedStreamKeyRef.current = key;
+                    sendStream(cur);
+                }
+            }, STREAM_AFTER_SECONDS * 1000);
+        },
+        [clearStreamTimer, sendStream]
+    );
+
     const safePlay = useCallback(async () => {
         try {
             await audioRef.current.play();
             setIsPlaying(true);
+
+            // jeśli zaczęliśmy grać – ustaw timer streamów
+            const item = currentItemRef.current;
+            if (item) scheduleStreamAfter10s(item);
         } catch (e) {
             setIsPlaying(false);
             console.warn("AUDIO PLAY BLOCKED:", e?.message || e);
         }
-    }, []);
+    }, [scheduleStreamAfter10s]);
 
     const safePause = useCallback(() => {
         audioRef.current.pause();
         setIsPlaying(false);
-    }, []);
+
+        // pauza -> nie liczymy streamu
+        clearStreamTimer();
+    }, [clearStreamTimer]);
 
     const stopAndReset = useCallback(() => {
         const audio = audioRef.current;
@@ -92,21 +172,11 @@ export function PlayerProvider({ children }) {
         setQueueIndex(0);
 
         originalQueueRef.current = [];
-    }, []);
 
-
-    const extractSignedAudio = (item) =>
-        item?.signedAudio ||
-        item?.signedUrl ||
-        item?.audioURL ||
-        item?.fileURL ||
-        null;
-
-    const extractSignedCover = (item) =>
-        item?.signedCover || item?.coverSigned || item?.coverURL || null;
-
-    const keyOf = (x) =>
-        x?.songID ? `s:${x.songID}` : x?.podcastID ? `p:${x.podcastID}` : null;
+        // stream cleanup
+        clearStreamTimer();
+        countedStreamKeyRef.current = null;
+    }, [clearStreamTimer]);
 
     useEffect(() => {
         if (!user) return;
@@ -141,6 +211,10 @@ export function PlayerProvider({ children }) {
             // zatrzymaj poprzedni
             audio.pause();
             setIsPlaying(false);
+
+            // stream: nowy item -> reset timera + odblokuj liczenie dla nowego key
+            clearStreamTimer();
+            countedStreamKeyRef.current = null;
 
             // ustaw src
             audio.src = signedAudio;
@@ -195,7 +269,7 @@ export function PlayerProvider({ children }) {
                 await safePlay();
             }
         },
-        [safePlay]
+        [safePlay, clearStreamTimer]
     );
 
     // kontrolki kolejki
@@ -209,13 +283,15 @@ export function PlayerProvider({ children }) {
             if (nextIndex >= q.length) {
                 audioRef.current.pause();
                 setIsPlaying(false);
+
+                clearStreamTimer();
                 return prev;
             }
 
             loadItem(q[nextIndex], autoplayRef.current);
             return nextIndex;
         });
-    }, [loadItem]);
+    }, [loadItem, clearStreamTimer]);
 
     const playPrevious = useCallback(() => {
         const audio = audioRef.current;
@@ -224,7 +300,13 @@ export function PlayerProvider({ children }) {
         if (audio && Number.isFinite(audio.currentTime) && audio.currentTime > PREV_RESTART_THRESHOLD) {
             audio.currentTime = 0;
             setProgress(0);
-            // jeśli było pauzowane, nie wymuszamy odtwarzania
+
+            // restart -> licz stream od nowa (po 10s)
+            clearStreamTimer();
+            countedStreamKeyRef.current = null;
+            if (!audio.paused && currentItemRef.current) {
+                scheduleStreamAfter10s(currentItemRef.current);
+            }
             return;
         }
 
@@ -236,7 +318,6 @@ export function PlayerProvider({ children }) {
             const prevIndex = prev - 1;
 
             if (prevIndex < 0) {
-                // jesteśmy na początku kolejki -> restart pierwszego
                 loadItem(q[0], autoplayRef.current);
                 return 0;
             }
@@ -244,7 +325,7 @@ export function PlayerProvider({ children }) {
             loadItem(q[prevIndex], autoplayRef.current);
             return prevIndex;
         });
-    }, [loadItem]);
+    }, [loadItem, clearStreamTimer, scheduleStreamAfter10s]);
 
     useEffect(() => {
         playNextRef.current = playNext;
@@ -313,6 +394,9 @@ export function PlayerProvider({ children }) {
         };
 
         const onEnded = async () => {
+            clearStreamTimer();
+            countedStreamKeyRef.current = null;
+
             if (playbackModeRef.current === "repeat") {
                 audio.currentTime = 0;
                 await safePlay();
@@ -321,16 +405,30 @@ export function PlayerProvider({ children }) {
             playNextRef.current?.();
         };
 
+        const onPlay = () => {
+            setIsPlaying(true);
+            if (currentItemRef.current) scheduleStreamAfter10s(currentItemRef.current);
+        };
+
+        const onPause = () => {
+            setIsPlaying(false);
+            clearStreamTimer();
+        };
+
         audio.addEventListener("timeupdate", onTimeUpdate);
         audio.addEventListener("loadedmetadata", onLoadedMetadata);
         audio.addEventListener("ended", onEnded);
+        audio.addEventListener("play", onPlay);
+        audio.addEventListener("pause", onPause);
 
         return () => {
             audio.removeEventListener("timeupdate", onTimeUpdate);
             audio.removeEventListener("loadedmetadata", onLoadedMetadata);
             audio.removeEventListener("ended", onEnded);
+            audio.removeEventListener("play", onPlay);
+            audio.removeEventListener("pause", onPause);
         };
-    }, [safePlay]);
+    }, [safePlay, clearStreamTimer, scheduleStreamAfter10s]);
 
     // podstawowe kontrolki
     const play = useCallback(() => safePlay(), [safePlay]);
@@ -415,7 +513,6 @@ export function PlayerProvider({ children }) {
 
                 // Włącz shuffle
                 if (mode === "shuffle") {
-                    // jeśli nie mamy "oryginalnej" kolejki, zapamiętaj aktualną (normalną)
                     if (!originalQueueRef.current?.length) {
                         originalQueueRef.current = [...prevQ];
                     }
@@ -457,13 +554,14 @@ export function PlayerProvider({ children }) {
     // cleanup
     useEffect(() => {
         return () => {
-            // eslint-disable-next-line react-hooks/exhaustive-deps
             const audio = audioRef.current;
             audio.pause();
             audio.src = "";
             if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
+
+            clearStreamTimer();
         };
-    }, []);
+    }, [clearStreamTimer]);
 
     const value = useMemo(
         () => ({

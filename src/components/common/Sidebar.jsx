@@ -1,16 +1,19 @@
 import { Link, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLibrary } from "../../contexts/LibraryContext";
-import { Library, Album, RefreshCw, ListMusic } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
+import { Library, Heart, Album, ListMusic, RefreshCw, Plus } from "lucide-react";
 
 export default function Sidebar() {
-    const { albums, playlists, loading, error, refetch } = useLibrary();
+    const { token } = useAuth();
+    const { albums, playlists, favoriteSongs, loading, error, refetch } = useLibrary();
     const location = useLocation();
+
+    const [creating, setCreating] = useState(false);
 
     const albumRows = useMemo(() => {
         return (albums || []).map((a) => ({
             key: `a-${a.albumID}`,
-            id: a.albumID,
             title: a.albumName || "Album",
             sub: a.creatorName || a?.creator?.user?.userName || "—",
             cover: a.signedCover || null,
@@ -22,14 +25,45 @@ export default function Sidebar() {
     const playlistRows = useMemo(() => {
         return (playlists || []).map((p) => ({
             key: `p-${p.playlistID}`,
-            id: p.playlistID,
             title: p.playlistName || "Playlista",
-            sub: p.ownerName || p.userName || p?.user?.userName || p.creatorName || "—",
+            sub: p?.user?.userName || p.creatorName || "—",
             cover: p.signedCover || null,
             href: `/playlists/${p.playlistID}`,
             isActive: location.pathname === `/playlists/${p.playlistID}`,
         }));
     }, [playlists, location.pathname]);
+
+    const likedActive = location.pathname === "/liked";
+    const likedCount = (favoriteSongs || []).length;
+
+    const createPlaylist = useCallback(async () => {
+        if (!token) return;
+
+        const playlistName = window.prompt("Nazwa playlisty:");
+        if (!playlistName) return;
+
+        setCreating(true);
+        try {
+            const res = await fetch("http://localhost:3000/api/playlists", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ playlistName }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.message || "Nie udało się utworzyć playlisty");
+
+            await refetch();
+        } catch (e) {
+            console.error("CREATE PLAYLIST ERROR:", e);
+            alert(e?.message || "Błąd tworzenia playlisty");
+        } finally {
+            setCreating(false);
+        }
+    }, [token, refetch]);
 
     return (
         <div style={styles.wrap}>
@@ -41,8 +75,38 @@ export default function Sidebar() {
                 </div>
             </div>
 
-            {/* GLOBAL HEADER (refresh dla całej biblioteki) */}
-            <div style={styles.globalHeader}>
+            {/* FIXED: LIKED SONGS */}
+            <div style={{ padding: "0 12px 10px" }}>
+                <Link
+                    to="/liked"
+                    style={{ ...styles.item, ...(likedActive ? styles.itemActive : null) }}
+                    title="Polubione utwory"
+                >
+                    <div style={styles.itemCover}>
+                        <div
+                            style={{
+                                ...styles.likedCover,
+                                ...(likedActive ? styles.likedCoverActive : null),
+                            }}
+                        >
+                            <Heart size={16} style={{ display: "block" }} />
+                        </div>
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                        <div style={styles.itemTitle}>Polubione utwory</div>
+                        <div style={styles.itemSub}>{likedCount ? `${likedCount} utw.` : "—"}</div>
+                    </div>
+                </Link>
+            </div>
+
+            {/* SECTION: ALBUMY */}
+            <div style={styles.sectionHeader}>
+                <div style={styles.sectionTitleRow}>
+                    <Album size={16} style={{ opacity: 0.75 }} />
+                    <div style={styles.sectionTitle}>Albumy</div>
+                </div>
+
                 <button
                     onClick={refetch}
                     disabled={loading}
@@ -52,6 +116,7 @@ export default function Sidebar() {
                         cursor: loading ? "not-allowed" : "pointer",
                     }}
                     title="Odśwież bibliotekę"
+                    type="button"
                 >
                     <RefreshCw size={16} style={{ display: "block" }} />
                 </button>
@@ -60,65 +125,80 @@ export default function Sidebar() {
             {loading ? <div style={styles.hint}>Ładowanie…</div> : null}
             {error ? <div style={styles.hint}>{error}</div> : null}
 
-            {/* ALBUMS */}
-            <div style={styles.sectionHeader}>
-                <div style={styles.sectionTitleRow}>
-                    <Album size={16} style={{ opacity: 0.75 }} />
-                    <div style={styles.sectionTitle}>Albumy</div>
-                </div>
-            </div>
-
             <div style={styles.list}>
-                {!loading && albumRows.length === 0 ? (
-                    <div style={styles.hint}>Brak albumów w bibliotece</div>
-                ) : null}
+                {!loading && albumRows.length === 0 ? <div style={styles.hint}>Brak albumów</div> : null}
 
-                {albumRows.map((row) => (
-                    <SidebarItem key={row.key} row={row} />
+                {albumRows.map((r) => (
+                    <Link
+                        key={r.key}
+                        to={r.href}
+                        style={{ ...styles.item, ...(r.isActive ? styles.itemActive : null) }}
+                        title={r.title}
+                    >
+                        <div style={styles.itemCover}>
+                            {r.cover ? (
+                                <img src={r.cover} alt="" style={styles.itemCoverImg} />
+                            ) : (
+                                <div style={styles.itemCoverPh} />
+                            )}
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                            <div style={styles.itemTitle}>{r.title}</div>
+                            <div style={styles.itemSub}>{r.sub}</div>
+                        </div>
+                    </Link>
                 ))}
             </div>
 
-            {/* PLAYLISTS */}
+            {/* SECTION: PLAYLISTY */}
             <div style={styles.sectionHeader}>
                 <div style={styles.sectionTitleRow}>
                     <ListMusic size={16} style={{ opacity: 0.75 }} />
                     <div style={styles.sectionTitle}>Playlisty</div>
                 </div>
+
+                <button
+                    onClick={createPlaylist}
+                    disabled={!token || creating}
+                    style={{
+                        ...styles.refreshBtn,
+                        opacity: !token || creating ? 0.6 : 1,
+                        cursor: !token || creating ? "not-allowed" : "pointer",
+                    }}
+                    title="Utwórz playlistę"
+                    type="button"
+                >
+                    <Plus size={16} style={{ display: "block" }} />
+                </button>
             </div>
 
             <div style={styles.list}>
-                {!loading && playlistRows.length === 0 ? (
-                    <div style={styles.hint}>Brak playlist w bibliotece</div>
-                ) : null}
+                {!loading && playlistRows.length === 0 ? <div style={styles.hint}>Brak playlist</div> : null}
 
-                {playlistRows.map((row) => (
-                    <SidebarItem key={row.key} row={row} />
+                {playlistRows.map((r) => (
+                    <Link
+                        key={r.key}
+                        to={r.href}
+                        style={{ ...styles.item, ...(r.isActive ? styles.itemActive : null) }}
+                        title={r.title}
+                    >
+                        <div style={styles.itemCover}>
+                            {r.cover ? (
+                                <img src={r.cover} alt="" style={styles.itemCoverImg} />
+                            ) : (
+                                <div style={styles.itemCoverPh} />
+                            )}
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                            <div style={styles.itemTitle}>{r.title}</div>
+                            <div style={styles.itemSub}>{r.sub}</div>
+                        </div>
+                    </Link>
                 ))}
             </div>
         </div>
-    );
-}
-
-function SidebarItem({ row }) {
-    return (
-        <Link
-            to={row.href}
-            style={{ ...styles.item, ...(row.isActive ? styles.itemActive : null) }}
-            title={row.title}
-        >
-            <div style={styles.itemCover}>
-                {row.cover ? (
-                    <img src={row.cover} alt="" style={styles.itemCoverImg} />
-                ) : (
-                    <div style={styles.itemCoverPh} />
-                )}
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-                <div style={styles.itemTitle}>{row.title}</div>
-                <div style={styles.itemSub}>{row.sub}</div>
-            </div>
-        </Link>
     );
 }
 
@@ -129,18 +209,12 @@ const styles = {
     topTitleRow: { display: "flex", alignItems: "center", gap: 8 },
     topTitle: { fontSize: 14, fontWeight: 900, letterSpacing: 0.2, opacity: 0.95 },
 
-    globalHeader: {
-        padding: "0 12px 10px",
-        display: "flex",
-        justifyContent: "flex-end",
-    },
-
     sectionHeader: {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         gap: 10,
-        padding: "10px 12px 6px",
+        padding: "10px 12px",
     },
 
     sectionTitleRow: { display: "flex", alignItems: "center", gap: 8 },
@@ -156,6 +230,7 @@ const styles = {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: 0,
     },
 
     hint: { padding: "8px 12px", opacity: 0.7, fontSize: 13 },
@@ -192,7 +267,29 @@ const styles = {
         overflow: "hidden",
         background: "#2a2a2a",
         flex: "0 0 auto",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
     },
+
+    likedCover: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background:
+            "linear-gradient(135deg, rgba(29,185,84,0.95) 0%, rgba(120,70,255,0.95) 55%, rgba(255,80,180,0.95) 100%)",
+        boxShadow: "0 8px 18px rgba(0,0,0,0.35)",
+        color: "white",
+    },
+
+    likedCoverActive: {
+        filter: "brightness(1.05)",
+        boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
+    },
+
     itemCoverImg: { width: "100%", height: "100%", objectFit: "cover" },
     itemCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
 

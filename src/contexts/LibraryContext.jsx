@@ -50,7 +50,16 @@ export function LibraryProvider({ children }) {
         setError("");
 
         try {
-            const [albumsRes, playlistsRes, libRes] = await Promise.all([
+            const [
+                likedRes,
+                albumsRes,
+                playlistsRes,
+                libRes,
+            ] = await Promise.all([
+                fetch("http://localhost:3000/api/libraries/liked-songs", {
+                    headers: { Authorization: `Bearer ${token}` },
+                    signal: ac.signal,
+                }),
                 fetch("http://localhost:3000/api/libraries/albums", {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
@@ -65,10 +74,14 @@ export function LibraryProvider({ children }) {
                 }),
             ]);
 
+            const likedData = await likedRes.json().catch(() => ({}));
             const albumsData = await albumsRes.json().catch(() => ({}));
             const playlistsData = await playlistsRes.json().catch(() => ({}));
             const libData = await libRes.json().catch(() => ({}));
 
+            if (!likedRes.ok) {
+                throw new Error(likedData?.message || "Failed to fetch liked songs");
+            }
             if (!albumsRes.ok) {
                 throw new Error(albumsData?.message || "Failed to fetch library albums");
             }
@@ -79,12 +92,14 @@ export function LibraryProvider({ children }) {
                 throw new Error(libData?.message || "Failed to fetch library");
             }
 
+            setFavoriteSongs(Array.isArray(likedData) ? likedData : likedData.songs || []);
+
             setAlbums(Array.isArray(albumsData) ? albumsData : albumsData.albums || []);
-            setPlaylists(
-                Array.isArray(playlistsData) ? playlistsData : playlistsData.playlists || []
-            );
-            setFavoriteSongs(libData.favoriteSongs || []);
+
+            setPlaylists(Array.isArray(playlistsData) ? playlistsData : playlistsData.playlists || []);
+
             setFavoritePodcasts(libData.favoritePodcasts || []);
+
         } catch (e) {
             if (e?.name === "AbortError") return;
             setError(e?.message || "Library error");
@@ -92,6 +107,41 @@ export function LibraryProvider({ children }) {
             setLoading(false);
         }
     }, [token]);
+
+    const toggleSongLike = useCallback(
+        async (songID, isLiked) => {
+            if (!token) return { success: false, message: "Brak tokenu" };
+            if (!songID) return { success: false, message: "Brak songID" };
+
+            try {
+                const res = await fetch(
+                    `http://localhost:3000/api/songs/${songID}/${isLiked ? "unlike" : "like"}`,
+                    {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` },
+                    }
+                );
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) return { success: false, message: data?.message || "Like update failed" };
+
+                await refetch();
+                return { success: true, likeCount: data?.likeCount };
+            } catch (e) {
+                return { success: false, message: e?.message || "Network error" };
+            }
+        },
+        [token, refetch]
+    );
+
+    const likedSongIds = useMemo(() => {
+        const set = new Set();
+        (favoriteSongs || []).forEach((s) => {
+            const id = s?.songID ?? s?.song?.songID;
+            if (id != null) set.add(String(id));
+        });
+        return set;
+    }, [favoriteSongs]);
 
     const toggleAlbumInLibrary = useCallback(
         async (albumID, isInLibrary) => {
@@ -154,9 +204,13 @@ export function LibraryProvider({ children }) {
             playlists,
             favoriteSongs,
             favoritePodcasts,
+            likedSongIds,
+
             loading,
             error,
             refetch,
+
+            toggleSongLike,
             toggleAlbumInLibrary,
             togglePlaylistInLibrary,
         }),
@@ -165,9 +219,11 @@ export function LibraryProvider({ children }) {
             playlists,
             favoriteSongs,
             favoritePodcasts,
+            likedSongIds,
             loading,
             error,
             refetch,
+            toggleSongLike,
             toggleAlbumInLibrary,
             togglePlaylistInLibrary,
         ]

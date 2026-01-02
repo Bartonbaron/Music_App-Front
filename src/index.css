@@ -63,11 +63,11 @@ svg.lucide * {
 }
 
 svg.lucide {
-  width: 1em !important;
-  height: 1em !important;
-  min-width: 1em !important;
-  min-height: 1em !important;
-  flex: 0 0 auto !important;
+  width: 1em;
+  height: 1em;
+  min-width: 1em;
+  min-height: 1em;
+  flex: 0 0 auto;
 }
 
 @media (prefers-color-scheme: light) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Plus, Trash2, Play } from "lucide-react";
 
@@ -7,7 +7,11 @@ import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 
-function formatDuration(sec) {
+import LikeButton from "../../components/common/LikeButton";
+import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
+import SongActionsModal from "../../components/common/SongActionsModal";
+
+function formatTrackDuration(sec) {
     const s = Number(sec);
     if (!Number.isFinite(s) || s <= 0) return "—";
     const total = Math.floor(s);
@@ -16,23 +20,23 @@ function formatDuration(sec) {
     return `${m}:${String(r).padStart(2, "0")}`;
 }
 
-function formatTotalDuration(seconds) {
-    if (!Number.isFinite(seconds) || seconds <= 0) return "—";
-    const total = Math.floor(seconds);
+function formatTotalDuration(sec) {
+    const s = Number(sec);
+    if (!Number.isFinite(s) || s <= 0) return "—";
+    const total = Math.floor(s);
+
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
 
-    if (h > 0) return `${h} h ${m} min`;
+    if (h > 0) return `${h} godz ${m} min`;
     return `${m} min`;
 }
 
 function formatFullDate(value) {
     if (!value) return null;
-
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
 
-    // pełna data: dd.mm.rrrr
     return d.toLocaleDateString("pl-PL", {
         day: "2-digit",
         month: "2-digit",
@@ -44,32 +48,27 @@ export default function AlbumPage() {
     const { id } = useParams();
     const { token } = useAuth();
     const { setNewQueue } = usePlayer();
+
     const { albums: libraryAlbums, toggleAlbumInLibrary } = useLibrary();
 
     const [album, setAlbum] = useState(null);
     const [songs, setSongs] = useState([]);
     const [loading, setLoading] = useState(true);
-
-    // msg zostawiamy jako "banner error" na stronie (nie jako osobny ekran)
     const [msg, setMsg] = useState("");
 
     const [savingLibrary, setSavingLibrary] = useState(false);
 
-    // toast
-    const [toast, setToast] = useState(null); // { text, type: "success" | "error" }
-    const toastTimerRef = useRef(null);
-
+    const [toast, setToast] = useState(null);
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = setTimeout(() => setToast(null), 1500);
+        window.setTimeout(() => setToast(null), 1400);
     }, []);
 
-    useEffect(() => {
-        return () => {
-            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        };
-    }, []);
+    // modale
+    const [addOpen, setAddOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activeSong, setActiveSong] = useState(null); // { songID, title }
+    const [menuBusy] = useState(false);
 
     useEffect(() => {
         if (!token) return;
@@ -81,7 +80,7 @@ export default function AlbumPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.message || "Failed to fetch album");
+            if (!res.ok) throw new Error(data?.message || "Failed to fetch album");
             return data;
         };
 
@@ -90,7 +89,7 @@ export default function AlbumPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.message || "Failed to fetch album songs");
+            if (!res.ok) throw new Error(data?.message || "Failed to fetch album songs");
             return data.songs ?? [];
         };
 
@@ -101,10 +100,10 @@ export default function AlbumPage() {
                 const [a, s] = await Promise.all([fetchAlbum(), fetchSongs()]);
                 if (!alive) return;
                 setAlbum(a);
-                setSongs(s);
+                setSongs(Array.isArray(s) ? s : []);
             } catch (e) {
                 if (!alive) return;
-                setMsg(e.message || "Error");
+                setMsg(e?.message || "Error");
             } finally {
                 if (alive) setLoading(false);
             }
@@ -123,32 +122,45 @@ export default function AlbumPage() {
     const albumArtist = album?.creator?.user?.userName || album?.creatorName || null;
 
     const releaseDateLabel = useMemo(() => {
-        // preferuj releaseDate, fallback na createdAt
         return formatFullDate(album?.releaseDate || album?.createdAt);
     }, [album?.releaseDate, album?.createdAt]);
 
+    const sortedSongs = useMemo(() => {
+        const list = Array.isArray(songs) ? songs.slice() : [];
+        const hasTrackNumbers = list.some((x) => x?.trackNumber != null);
+        if (!hasTrackNumbers) return list;
+        return list.sort((a, b) => (a.trackNumber ?? 0) - (b.trackNumber ?? 0));
+    }, [songs]);
+
     const queueItems = useMemo(() => {
-        return (songs || [])
+        return (sortedSongs || [])
             .map((s) => {
-                const item = mapSongToPlayerItem(s);
+                const mapped = mapSongToPlayerItem(s);
                 return {
-                    ...item,
-                    // preferuj okładkę albumu
-                    signedCover: albumCover || item.signedCover,
-                    // preferuj autora albumu
-                    creatorName: albumArtist || item.creatorName || item.artistName || null,
-                    songName: s.songName ?? item.title,
+                    ...mapped,
+                    type: "song",
+                    signedCover: albumCover || mapped.signedCover,
+                    creatorName: albumArtist || mapped.creatorName || mapped.artistName || null,
+                    songName: s.songName ?? mapped.title,
+                    songID: s.songID ?? mapped.songID,
+                    duration: s.duration ?? mapped.duration,
                 };
             })
             .filter((x) => !!x.signedAudio);
-    }, [songs, albumCover, albumArtist]);
+    }, [sortedSongs, albumCover, albumArtist]);
 
-    const albumDuration = useMemo(() => {
-        return (songs || []).reduce((sum, s) => {
-            const d = Number(s.duration);
-            return Number.isFinite(d) ? sum + d : sum;
+    const queueIndexBySongId = useMemo(() => {
+        const m = new Map();
+        queueItems.forEach((q, i) => m.set(String(q.songID), i));
+        return m;
+    }, [queueItems]);
+
+    const totalDuration = useMemo(() => {
+        return (sortedSongs || []).reduce((acc, s) => {
+            const d = Number(s?.duration);
+            return acc + (Number.isFinite(d) ? d : 0);
         }, 0);
-    }, [songs]);
+    }, [sortedSongs]);
 
     const playAlbum = useCallback(() => {
         if (!queueItems.length) return;
@@ -157,13 +169,14 @@ export default function AlbumPage() {
 
     const toggleLibrary = useCallback(async () => {
         if (!token) return;
+        if (!toggleAlbumInLibrary) {
+            showToast("Brak toggleAlbumInLibrary w LibraryContext", "error");
+            return;
+        }
 
         setSavingLibrary(true);
-        setMsg("");
-
         try {
             const result = await toggleAlbumInLibrary(id, isInLibrary);
-
             if (result?.success) {
                 showToast(isInLibrary ? "Usunięto z biblioteki" : "Dodano do biblioteki", "success");
             } else {
@@ -176,11 +189,51 @@ export default function AlbumPage() {
         }
     }, [token, toggleAlbumInLibrary, id, isInLibrary, showToast]);
 
+    const openSongMenu = useCallback((songID, title) => {
+        setActiveSong({ songID, title });
+        setMenuOpen(true);
+    }, []);
+
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
+    if (msg) return <div style={styles.page}>{msg}</div>;
 
     return (
         <div style={styles.page}>
-            {msg ? <div style={styles.errorBanner}>{msg}</div> : null}
+            {/* TOAST */}
+            {toast ? (
+                <div
+                    style={{
+                        ...styles.toast,
+                        borderColor: toast.type === "error" ? "#7a2a2a" : "#2a7a3a",
+                        background: toast.type === "error" ? "#2a1515" : "#142015",
+                    }}
+                >
+                    {toast.text}
+                </div>
+            ) : null}
+
+            {/* MODAL: SONG MENU (tylko Dodaj do playlisty) */}
+            <SongActionsModal
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                songTitle={activeSong?.title}
+                canRemoveFromCurrent={false}
+                busy={menuBusy}
+                onAddToPlaylist={() => {
+                    setMenuOpen(false);
+                    setAddOpen(true);
+                }}
+                onRemoveFromCurrent={null}
+            />
+
+            {/* MODAL: ADD TO PLAYLIST */}
+            <AddToPlaylistModal
+                open={addOpen}
+                onClose={() => setAddOpen(false)}
+                songID={activeSong?.songID}
+                songTitle={activeSong?.title}
+                onToast={showToast}
+            />
 
             {/* HEADER */}
             <div style={styles.header}>
@@ -203,14 +256,15 @@ export default function AlbumPage() {
                         ) : null}
 
                         <span style={{ opacity: 0.65 }}> • </span>
-                        <span style={{ opacity: 0.85 }}>{songs.length} utworów</span>
+                        <span style={{ opacity: 0.85 }}>{sortedSongs.length} utworów</span>
 
                         <span style={{ opacity: 0.65 }}> • </span>
-                        <span style={{ opacity: 0.85 }}>{formatTotalDuration(albumDuration)}</span>
+                        <span style={{ opacity: 0.85 }}>{formatTotalDuration(totalDuration)}</span>
                     </div>
 
                     <div style={styles.actions}>
                         <button
+                            type="button"
                             onClick={playAlbum}
                             disabled={!queueItems.length}
                             style={{
@@ -224,6 +278,7 @@ export default function AlbumPage() {
                         </button>
 
                         <button
+                            type="button"
                             onClick={toggleLibrary}
                             disabled={savingLibrary}
                             style={{
@@ -249,13 +304,15 @@ export default function AlbumPage() {
 
             {/* TRACKLIST */}
             <div style={styles.list}>
-                {songs.map((s, idx) => {
-                    const playable = !!queueItems[idx]?.signedAudio;
+                {sortedSongs.map((s, idx) => {
+                    const queueIdx = queueIndexBySongId.get(String(s.songID));
+                    const playable = queueIdx != null;
 
                     return (
-                        <div key={s.songID} style={styles.row}>
+                        <div key={s.songID || idx} style={styles.row}>
                             <button
-                                onClick={() => setNewQueue(queueItems, idx)}
+                                type="button"
+                                onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
                                 disabled={!playable}
                                 style={{
                                     ...styles.rowPlayBtn,
@@ -264,43 +321,36 @@ export default function AlbumPage() {
                                 }}
                                 title="Odtwórz od tego"
                             >
-                                <Play size={14} />
+                                ▶
                             </button>
 
                             <div style={styles.trackNo}>{s.trackNumber ?? idx + 1}.</div>
 
                             <div style={styles.trackMain}>
-                                <div style={styles.trackTitle}>{s.songName}</div>
-                                <div style={styles.trackSub}>{albumArtist || "—"}</div>
+                                <div style={styles.trackTitle} title={s.songName || "Utwór"}>
+                                    {s.songName || "Utwór"}
+                                </div>
+                                <div style={styles.trackSub} title={albumArtist || "—"}>
+                                    {albumArtist || "—"}
+                                </div>
                             </div>
 
-                            <div style={styles.trackTime}>{formatDuration(s.duration)}</div>
+                            <LikeButton songID={s.songID} onToast={showToast} />
+
+                            <button
+                                type="button"
+                                onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
+                                style={styles.moreBtn}
+                                title="Opcje"
+                            >
+                                ⋯
+                            </button>
+
+                            <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
                     );
                 })}
             </div>
-
-            {/* TOAST */}
-            {toast && (
-                <div
-                    style={{
-                        position: "fixed",
-                        bottom: 110, // nad PlayerBar
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        padding: "10px 14px",
-                        borderRadius: 10,
-                        background: toast.type === "error" ? "#b3261e" : "#1db954",
-                        color: toast.type === "error" ? "#fff" : "#000",
-                        fontWeight: 800,
-                        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-                        zIndex: 200,
-                        pointerEvents: "none",
-                    }}
-                >
-                    {toast.text}
-                </div>
-            )}
         </div>
     );
 }
@@ -308,13 +358,16 @@ export default function AlbumPage() {
 const styles = {
     page: { padding: 20, color: "white", paddingBottom: 120 },
 
-    errorBanner: {
-        background: "#2a1a1a",
-        border: "1px solid #5a2a2a",
-        padding: 12,
-        borderRadius: 10,
-        marginBottom: 12,
-        opacity: 0.95,
+    toast: {
+        position: "fixed",
+        right: 18,
+        bottom: 110,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        color: "white",
+        zIndex: 999,
+        fontSize: 13,
     },
 
     header: { display: "flex", gap: 16, alignItems: "center" },
@@ -338,6 +391,7 @@ const styles = {
     primaryBtn: {
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 8,
         padding: "10px 12px",
         borderRadius: 10,
@@ -350,6 +404,7 @@ const styles = {
     ghostBtn: {
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 8,
         padding: "10px 12px",
         borderRadius: 10,
@@ -363,7 +418,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 40px 1fr 60px",
+        gridTemplateColumns: "44px 40px minmax(0, 1fr) 44px 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -380,6 +435,23 @@ const styles = {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: 0,
+    },
+
+    moreBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        fontWeight: 900,
+        fontSize: 18,
+        lineHeight: 1,
     },
 
     trackNo: { opacity: 0.7, textAlign: "right" },

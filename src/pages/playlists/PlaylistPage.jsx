@@ -1,4 +1,3 @@
-// src/pages/playlist/PlaylistPage.jsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash2, Play } from "lucide-react";
@@ -7,6 +6,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
+
+import LikeButton from "../../components/common/LikeButton";
+import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
+import SongActionsModal from "../../components/common/SongActionsModal";
 
 function formatTrackDuration(sec) {
     const s = Number(sec);
@@ -20,13 +23,15 @@ function formatTrackDuration(sec) {
 function formatTotalDuration(sec) {
     const s = Number(sec);
     if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-
+    const total = Math.floor(totalOrZero(s));
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
-
     if (h > 0) return `${h} godz ${m} min`;
     return `${m} min`;
+}
+function totalOrZero(x) {
+    const n = Number(x);
+    return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 function formatFullDate(value) {
@@ -44,22 +49,39 @@ function formatFullDate(value) {
 export default function PlaylistPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-
-    const { token, user } = useAuth();
+    const { user, token } = useAuth();
     const { setNewQueue } = usePlayer();
     const { playlists: libraryPlaylists, togglePlaylistInLibrary, refetch } = useLibrary();
 
     const [playlist, setPlaylist] = useState(null);
-    const [items, setItems] = useState([]); // [{ position, song: {...} }]
+    const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
-    const [saving, setSaving] = useState(false);
 
+    const [savingLibrary, setSavingLibrary] = useState(false);
     const [toast, setToast] = useState(null);
+
+    // modale
+    const [addOpen, setAddOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activeSong, setActiveSong] = useState(null); // { songID, title }
+
+    const [menuBusy, setMenuBusy] = useState(false);
+
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
         window.setTimeout(() => setToast(null), 1400);
     }, []);
+
+    const fetchSongsOnly = useCallback(async () => {
+        if (!token) return;
+        const res = await fetch(`http://localhost:3000/api/playlists/${id}/songs`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || "Failed to fetch playlist songs");
+        setItems(Array.isArray(data) ? data : []);
+    }, [id, token]);
 
     useEffect(() => {
         if (!token) return;
@@ -91,7 +113,7 @@ export default function PlaylistPage() {
                 const [p, s] = await Promise.all([fetchPlaylist(), fetchSongs()]);
                 if (!alive) return;
                 setPlaylist(p);
-                setItems(s);
+                setItems(Array.isArray(s) ? s : []);
             } catch (e) {
                 if (!alive) return;
                 setMsg(e?.message || "Error");
@@ -105,28 +127,31 @@ export default function PlaylistPage() {
         };
     }, [id, token]);
 
+    const meId = useMemo(() => String(user?.userID ?? user?.id ?? ""), [user]);
+    const playlistOwnerId = useMemo(() => String(playlist?.userID ?? ""), [playlist]);
+
+    const isOwner = useMemo(() => {
+        if (!meId || !playlistOwnerId) return false;
+        return meId === playlistOwnerId;
+    }, [meId, playlistOwnerId]);
+
+    const canEdit = useMemo(() => {
+        if (!playlist) return false;
+        return isOwner || Boolean(playlist?.isCollaborative);
+    }, [playlist, isOwner]);
+
     const isInLibrary = useMemo(() => {
         return (libraryPlaylists || []).some((p) => String(p.playlistID) === String(id));
     }, [libraryPlaylists, id]);
 
     const playlistCover = playlist?.signedCover || null;
     const playlistOwner = playlist?.user?.userName || playlist?.creatorName || null;
-
-    // owner check: playlist.userID OR playlist.user.userID vs logged user
-    const isOwner = useMemo(() => {
-        const ownerId = playlist?.userID ?? playlist?.user?.userID ?? null;
-        const myId = user?.userID ?? user?.id ?? null; // zależy jak masz w AuthContext
-        if (!ownerId || !myId) return false;
-        return String(ownerId) === String(myId);
-    }, [playlist, user]);
-
     const createdAtLabel = useMemo(() => formatFullDate(playlist?.createdAt), [playlist?.createdAt]);
 
     const sortedItems = useMemo(() => {
         return (items || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     }, [items]);
 
-    // NIE dziedziczymy okładki playlisty na utwory (zgodnie z Twoją prośbą)
     const queueItems = useMemo(() => {
         return sortedItems
             .map((row) => {
@@ -135,16 +160,18 @@ export default function PlaylistPage() {
 
                 return {
                     ...mapped,
-                    signedCover: mapped.signedCover, // bez playlistCover fallback
+                    type: "song",
+                    signedCover: mapped.signedCover,
                     creatorName:
                         s.creatorName ||
                         s?.creator?.user?.userName ||
+                        playlistOwner ||
                         mapped.creatorName ||
                         mapped.artistName ||
-                        playlistOwner ||
                         null,
                     songName: s.songName ?? mapped.title,
                     songID: s.songID ?? mapped.songID,
+                    duration: s.duration ?? mapped.duration,
                     _position: row.position,
                 };
             })
@@ -169,17 +196,47 @@ export default function PlaylistPage() {
         setNewQueue(queueItems, 0);
     }, [queueItems, setNewQueue]);
 
-    const toggleLibrary = useCallback(async () => {
+    const toggleLibraryOrDeletePlaylist = useCallback(async () => {
         if (!token) return;
+
+        // owner -> usuń całą playlistę
+        if (isOwner) {
+            const ok = window.confirm("Na pewno usunąć playlistę? Tej operacji nie da się cofnąć.");
+            if (!ok) return;
+
+            setSavingLibrary(true);
+            try {
+                const res = await fetch(`http://localhost:3000/api/playlists/${id}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    showToast(data?.message || "Nie udało się usunąć playlisty", "error");
+                    return;
+                }
+
+                showToast("Usunięto playlistę", "success");
+                await refetch?.();
+                navigate("/", { replace: true });
+            } catch (e) {
+                showToast(e?.message || "Błąd usuwania", "error");
+            } finally {
+                setSavingLibrary(false);
+            }
+            return;
+        }
+
+        // nie owner -> dodaj/usuń z biblioteki
         if (!togglePlaylistInLibrary) {
             showToast("Brak togglePlaylistInLibrary w LibraryContext", "error");
             return;
         }
 
-        setSaving(true);
+        setSavingLibrary(true);
         try {
             const result = await togglePlaylistInLibrary(id, isInLibrary);
-
             if (result?.success) {
                 showToast(isInLibrary ? "Usunięto z biblioteki" : "Dodano do biblioteki", "success");
             } else {
@@ -188,39 +245,48 @@ export default function PlaylistPage() {
         } catch (e) {
             showToast(e?.message || "Błąd biblioteki", "error");
         } finally {
-            setSaving(false);
+            setSavingLibrary(false);
         }
-    }, [token, togglePlaylistInLibrary, id, isInLibrary, showToast]);
+    }, [token, isOwner, id, isInLibrary, togglePlaylistInLibrary, showToast, refetch, navigate]);
 
-    const handleDeletePlaylist = useCallback(async () => {
-        if (!token) return;
+    const openSongMenu = useCallback((songID, title) => {
+        setActiveSong({ songID, title });
+        setMenuOpen(true);
+    }, []);
 
-        const ok = window.confirm("Na pewno usunąć playlistę? Tej akcji nie da się cofnąć.");
+    const removeFromThisPlaylist = useCallback(async () => {
+        if (!token || !activeSong?.songID) return;
+
+        const ok = window.confirm("Usunąć ten utwór z tej playlisty?");
         if (!ok) return;
 
-        setSaving(true);
+        setMenuBusy(true);
         try {
-            const res = await fetch(`http://localhost:3000/api/playlists/${id}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await fetch(
+                `http://localhost:3000/api/playlists/${id}/songs/${activeSong.songID}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
 
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data?.message || "Delete failed");
+            if (!res.ok) {
+                showToast(data?.message || "Nie udało się usunąć utworu", "error");
+                return;
+            }
 
-            showToast("Playlista usunięta", "success");
+            showToast("Usunięto z playlisty", "success");
+            setMenuOpen(false);
 
-            // odśwież sidebar
-            await refetch?.();
-
-            // wyjdź z widoku usuniętej playlisty
-            navigate("/home");
+            // odśwież tracklistę (bez przeładowywania całej strony)
+            await fetchSongsOnly();
         } catch (e) {
-            showToast(e?.message || "Błąd usuwania", "error");
+            showToast(e?.message || "Błąd sieci", "error");
         } finally {
-            setSaving(false);
+            setMenuBusy(false);
         }
-    }, [token, id, refetch, navigate, showToast]);
+    }, [token, activeSong, id, showToast, fetchSongsOnly]);
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
@@ -239,6 +305,29 @@ export default function PlaylistPage() {
                     {toast.text}
                 </div>
             ) : null}
+
+            {/* MODAL: SONG MENU */}
+            <SongActionsModal
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                songTitle={activeSong?.title}
+                canRemoveFromCurrent={canEdit}
+                busy={menuBusy}
+                onAddToPlaylist={() => {
+                    setMenuOpen(false);
+                    setAddOpen(true);
+                }}
+                onRemoveFromCurrent={removeFromThisPlaylist}
+            />
+
+            {/* MODAL: ADD TO PLAYLIST */}
+            <AddToPlaylistModal
+                open={addOpen}
+                onClose={() => setAddOpen(false)}
+                songID={activeSong?.songID}
+                songTitle={activeSong?.title}
+                onToast={showToast}
+            />
 
             {/* HEADER */}
             <div style={styles.header}>
@@ -272,6 +361,7 @@ export default function PlaylistPage() {
 
                     <div style={styles.actions}>
                         <button
+                            type="button"
                             onClick={playPlaylist}
                             disabled={!queueItems.length}
                             style={{
@@ -284,43 +374,37 @@ export default function PlaylistPage() {
                             <Play size={16} style={{ display: "block" }} /> Odtwórz
                         </button>
 
-                        {/* Właściciel: usuń playlistę z bazy. Inni: toggle biblioteki */}
-                        {isOwner ? (
-                            <button
-                                onClick={handleDeletePlaylist}
-                                disabled={saving}
-                                style={{
-                                    ...styles.ghostBtn,
-                                    opacity: saving ? 0.6 : 1,
-                                    cursor: saving ? "not-allowed" : "pointer",
-                                    borderColor: "#5a2a2a",
-                                }}
-                                title="Usuń playlistę"
-                            >
-                                <Trash2 size={16} style={{ display: "block" }} /> Usuń
-                            </button>
-                        ) : (
-                            <button
-                                onClick={toggleLibrary}
-                                disabled={saving}
-                                style={{
-                                    ...styles.ghostBtn,
-                                    opacity: saving ? 0.6 : 1,
-                                    cursor: saving ? "not-allowed" : "pointer",
-                                }}
-                                title={isInLibrary ? "Usuń z biblioteki" : "Dodaj do biblioteki"}
-                            >
-                                {isInLibrary ? (
-                                    <>
-                                        <Trash2 size={16} style={{ display: "block" }} /> Usuń z biblioteki
-                                    </>
-                                ) : (
-                                    <>
-                                        <Plus size={16} style={{ display: "block" }} /> Dodaj do biblioteki
-                                    </>
-                                )}
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={toggleLibraryOrDeletePlaylist}
+                            disabled={savingLibrary}
+                            style={{
+                                ...styles.ghostBtn,
+                                opacity: savingLibrary ? 0.6 : 1,
+                                cursor: savingLibrary ? "not-allowed" : "pointer",
+                            }}
+                            title={
+                                isOwner
+                                    ? "Usuń playlistę"
+                                    : isInLibrary
+                                        ? "Usuń z biblioteki"
+                                        : "Dodaj do biblioteki"
+                            }
+                        >
+                            {isOwner ? (
+                                <>
+                                    <Trash2 size={16} style={{ display: "block" }} /> Usuń playlistę
+                                </>
+                            ) : isInLibrary ? (
+                                <>
+                                    <Trash2 size={16} style={{ display: "block" }} /> Usuń z biblioteki
+                                </>
+                            ) : (
+                                <>
+                                    <Plus size={16} style={{ display: "block" }} /> Dodaj do biblioteki
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -337,6 +421,7 @@ export default function PlaylistPage() {
                     return (
                         <div key={row.playlistSongID || `${s.songID}-${row.position}`} style={styles.row}>
                             <button
+                                type="button"
                                 onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
                                 disabled={!playable}
                                 style={{
@@ -352,9 +437,24 @@ export default function PlaylistPage() {
                             <div style={styles.trackNo}>{row.position ?? idx + 1}.</div>
 
                             <div style={styles.trackMain}>
-                                <div style={styles.trackTitle}>{s.songName || "Utwór"}</div>
-                                <div style={styles.trackSub}>{artist}</div>
+                                <div style={styles.trackTitle} title={s.songName || "Utwór"}>
+                                    {s.songName || "Utwór"}
+                                </div>
+                                <div style={styles.trackSub} title={artist}>
+                                    {artist}
+                                </div>
                             </div>
+
+                            <LikeButton songID={s.songID} onToast={showToast} />
+
+                            <button
+                                type="button"
+                                onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
+                                style={styles.moreBtn}
+                                title="Opcje"
+                            >
+                                ⋯
+                            </button>
 
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
@@ -431,7 +531,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 40px 1fr 60px",
+        gridTemplateColumns: "44px 40px minmax(0, 1fr) 44px 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -449,6 +549,22 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+    },
+
+    moreBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        fontWeight: 900,
+        fontSize: 18,
+        lineHeight: 1,
     },
 
     trackNo: { opacity: 0.7, textAlign: "right" },

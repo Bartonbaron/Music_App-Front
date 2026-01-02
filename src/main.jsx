@@ -16,6 +16,7 @@ import TestPlayerPage from "./pages/TestPlayerPage";
 import AlbumPage from "./pages/albums/AlbumPage";
 import PlaylistPage from "./pages/playlists/PlaylistPage.jsx";
 import LikedSongsPage from "./pages/LikedSongsPage.jsx";
+import PlayHistoryPage from "./pages/history/PlayHistoryPage.jsx";
 
 import "./index.css";
 
@@ -40,6 +41,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/albums/:id" element={<AlbumPage />} />
                             <Route path="/library" element={<HomePage />} />
                             <Route path="/liked" element={<LikedSongsPage />} />
+                            <Route path="/history" element={<PlayHistoryPage />} />
                         </Route>
 
                         {/* domyślne */}

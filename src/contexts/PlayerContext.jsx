@@ -22,6 +22,12 @@ export function PlayerProvider({ children }) {
     const countedStreamKeyRef = useRef(null); // żeby nie liczyć wielokrotnie w ramach jednego odtworzenia
     const STREAM_AFTER_SECONDS = 10;
 
+    // play history refs (żeby nie spamować POST przy wielokrotnych "play" / resume)
+    const historySentKeyRef = useRef(null);
+    const historySentAtRef = useRef(0);
+    const historyStartedOnceRef = useRef(false); // odróżnia "nowy start" od resume
+    const HISTORY_COOLDOWN_MS = 5 * 60 * 1000; // spójne z backendem
+
     // stan odtwarzacza
     const [currentItem, setCurrentItem] = useState(null); // { type, songID/podcastID, signedAudio, signedCover, ... }
     const [isPlaying, setIsPlaying] = useState(false);
@@ -90,7 +96,8 @@ export function PlayerProvider({ children }) {
             if (!token) return;
             if (!item) return;
 
-            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            const type =
+                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
             if (type !== "song") return;
 
             const songID = item?.songID;
@@ -102,8 +109,7 @@ export function PlayerProvider({ children }) {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 // eslint-disable-next-line no-unused-vars
-            } catch (_) {/**/
-            }
+            } catch (_) { /**/ }
         },
         [token]
     );
@@ -130,6 +136,42 @@ export function PlayerProvider({ children }) {
             }, STREAM_AFTER_SECONDS * 1000);
         },
         [clearStreamTimer, sendStream]
+    );
+
+    // ---------------- PLAY HISTORY ----------------
+    const sendHistory = useCallback(
+        async (item) => {
+            if (!token) return;
+            if (!item) return;
+
+            const type =
+                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            if (!type) return;
+
+            const payload =
+                type === "song"
+                    ? item?.songID
+                        ? { songID: item.songID }
+                        : null
+                    : item?.podcastID
+                        ? { podcastID: item.podcastID }
+                        : null;
+
+            if (!payload) return;
+
+            try {
+                await fetch("http://localhost:3000/api/playhistory", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                });
+                // eslint-disable-next-line no-unused-vars
+            } catch (_) { /**/ }
+        },
+        [token]
     );
 
     const safePlay = useCallback(async () => {
@@ -176,6 +218,11 @@ export function PlayerProvider({ children }) {
         // stream cleanup
         clearStreamTimer();
         countedStreamKeyRef.current = null;
+
+        // history cleanup
+        historyStartedOnceRef.current = false;
+        historySentKeyRef.current = null;
+        historySentAtRef.current = 0;
     }, [clearStreamTimer]);
 
     useEffect(() => {
@@ -215,6 +262,11 @@ export function PlayerProvider({ children }) {
             // stream: nowy item -> reset timera + odblokuj liczenie dla nowego key
             clearStreamTimer();
             countedStreamKeyRef.current = null;
+
+            // history: nowy item -> pozwól wysłać wpis przy pierwszym realnym play
+            historyStartedOnceRef.current = false;
+            historySentKeyRef.current = null;
+            historySentAtRef.current = 0;
 
             // ustaw src
             audio.src = signedAudio;
@@ -297,7 +349,11 @@ export function PlayerProvider({ children }) {
         const audio = audioRef.current;
 
         // Jeśli minęło więcej niż x sekund to restart obecnego utworu
-        if (audio && Number.isFinite(audio.currentTime) && audio.currentTime > PREV_RESTART_THRESHOLD) {
+        if (
+            audio &&
+            Number.isFinite(audio.currentTime) &&
+            audio.currentTime > PREV_RESTART_THRESHOLD
+        ) {
             audio.currentTime = 0;
             setProgress(0);
 
@@ -307,6 +363,10 @@ export function PlayerProvider({ children }) {
             if (!audio.paused && currentItemRef.current) {
                 scheduleStreamAfter10s(currentItemRef.current);
             }
+
+            // restart -> NIE dopisuj do historii (to nadal ten sam "play")
+            historyStartedOnceRef.current = true;
+
             return;
         }
 
@@ -397,6 +457,9 @@ export function PlayerProvider({ children }) {
             clearStreamTimer();
             countedStreamKeyRef.current = null;
 
+            // kończy się -> następny item będzie "nowym startem"
+            historyStartedOnceRef.current = false;
+
             if (playbackModeRef.current === "repeat") {
                 audio.currentTime = 0;
                 await safePlay();
@@ -407,7 +470,36 @@ export function PlayerProvider({ children }) {
 
         const onPlay = () => {
             setIsPlaying(true);
-            if (currentItemRef.current) scheduleStreamAfter10s(currentItemRef.current);
+
+            const item = currentItemRef.current;
+            if (!item) return;
+
+            // stream timer
+            scheduleStreamAfter10s(item);
+
+            // --- HISTORY ---
+            // Jeśli to resume (po pauzie), nie dopisuj.
+            // Dopisuj tylko przy pierwszym realnym rozpoczęciu grania po loadItem.
+            if (historyStartedOnceRef.current) return;
+
+            const key = keyOf(item);
+            if (!key) return;
+
+            const now = Date.now();
+            const recentlySent =
+                historySentKeyRef.current === key &&
+                now - historySentAtRef.current < HISTORY_COOLDOWN_MS;
+
+            if (recentlySent) {
+                historyStartedOnceRef.current = true;
+                return;
+            }
+
+            historySentKeyRef.current = key;
+            historySentAtRef.current = now;
+            historyStartedOnceRef.current = true;
+
+            sendHistory(item);
         };
 
         const onPause = () => {
@@ -428,7 +520,7 @@ export function PlayerProvider({ children }) {
             audio.removeEventListener("play", onPlay);
             audio.removeEventListener("pause", onPause);
         };
-    }, [safePlay, clearStreamTimer, scheduleStreamAfter10s]);
+    }, [safePlay, clearStreamTimer, scheduleStreamAfter10s, sendHistory]);
 
     // podstawowe kontrolki
     const play = useCallback(() => safePlay(), [safePlay]);

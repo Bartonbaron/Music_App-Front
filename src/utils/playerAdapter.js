@@ -2,6 +2,7 @@ export function mapSongToPlayerItem(song) {
     return {
         type: "song",
         songID: song.songID,
+        songName: song.songName ?? song.title ?? "Utwór",
         title: song.songName ?? song.title ?? "Utwór",
         creatorName: song.artist ?? song.creatorName ?? song?.creator?.user?.userName ?? null,
         signedAudio: song.signedAudio ?? song.fileURL ?? null,

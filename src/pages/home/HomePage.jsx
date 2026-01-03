@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
-import { fetchPlayHistory, clearPlayHistory } from "../../api/playHistory";
-import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter";
+import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
 
 export default function HomePage() {
     const { token, user, logout } = useAuth();
@@ -10,13 +9,12 @@ export default function HomePage() {
 
     const [songs, setSongs] = useState([]);
     const [error, setError] = useState("");
-
-    const [history, setHistory] = useState([]);
-    const [historyError, setHistoryError] = useState("");
-    const [historyLoading, setHistoryLoading] = useState(false);
+    const [podcasts, setPodcasts] = useState([]);
+    const [podcastError, setPodcastError] = useState("");
 
     useEffect(() => {
         if (!token) return;
+
         let alive = true;
 
         (async () => {
@@ -50,32 +48,40 @@ export default function HomePage() {
         };
     }, [token]);
 
-    // Pobranie historii odtwarzania
-    const refetchHistory = async () => {
-        if (!token) return;
-        setHistoryLoading(true);
-        setHistoryError("");
-        try {
-            const data = await fetchPlayHistory(token);
-            const items = (data?.items || [])
-                .map(mapHistoryToCard)
-                .filter(Boolean)
-                .filter((x) => !!x.signedAudio);
-            setHistory(items);
-        } catch (e) {
-            setHistoryError(e.message);
-        } finally {
-            setHistoryLoading(false);
-        }
-    };
-
     useEffect(() => {
         if (!token) return;
-        refetchHistory();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+
+        let alive = true;
+
+        (async () => {
+            try {
+                const res = await fetch("http://localhost:3000/api/podcasts", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.message || "Failed to fetch podcasts");
+
+                const normalized = (Array.isArray(data) ? data : [])
+                    .map(mapPodcastToPlayerItem)
+                    .filter((p) => !!p.signedAudio);
+
+                if (alive) setPodcasts(normalized);
+            } catch (e) {
+                if (alive) setPodcastError(e.message);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
     }, [token]);
 
     const queueItems = useMemo(() => songs.filter((x) => !!x.signedAudio), [songs]);
+    const podcastQueue = useMemo(
+        () => podcasts.filter((p) => !!p.signedAudio),
+        [podcasts]
+    );
 
     return (
         <div style={styles.page}>
@@ -87,87 +93,6 @@ export default function HomePage() {
                 </button>
             </header>
 
-            {/* Ostatnio odtwarzane */}
-            <div style={styles.section}>
-                <div style={styles.sectionHeaderRow}>
-                    <h3 style={styles.title}>Ostatnio odtwarzane</h3>
-
-                    <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-                        <button
-                            style={styles.smallBtn}
-                            onClick={refetchHistory}
-                            disabled={historyLoading}
-                            title="Odśwież"
-                        >
-                            ↻
-                        </button>
-
-                        <button
-                            style={styles.smallBtnDanger}
-                            onClick={async () => {
-                                if (!token) return;
-                                try {
-                                    await clearPlayHistory(token);
-                                    setHistory([]);
-                                } catch (e) {
-                                    setHistoryError(e.message);
-                                }
-                            }}
-                            title="Wyczyść historię"
-                        >
-                            Wyczyść
-                        </button>
-                    </div>
-                </div>
-
-                {historyError && <div style={styles.error}>{historyError}</div>}
-
-                {history.length === 0 && !historyLoading ? (
-                    <div style={{ opacity: 0.75 }}>Brak historii odtwarzania.</div>
-                ) : (
-                    <div style={styles.grid}>
-                        {history.map((h) => (
-                            <div key={h.key} style={styles.card}>
-                                <div style={styles.cardTop}>
-                                    {h.signedCover ? (
-                                        <img src={h.signedCover} alt="" style={styles.cover} />
-                                    ) : (
-                                        <div style={styles.coverPlaceholder} />
-                                    )}
-                                </div>
-
-                                <div style={styles.cardBody}>
-                                    <div style={styles.name} title={h.title}>
-                                        {h.title}
-                                    </div>
-
-                                    <div style={{ fontSize: 12, opacity: 0.75 }}>{h.subtitle}</div>
-
-                                    <div style={{ fontSize: 12, opacity: 0.6 }}>
-                                        {new Date(h.playedAt).toLocaleString("pl-PL")}
-                                    </div>
-
-                                    <button
-                                        style={{
-                                            ...styles.playBtn,
-                                            opacity: h.signedAudio ? 1 : 0.5,
-                                            cursor: h.signedAudio ? "pointer" : "not-allowed",
-                                        }}
-                                        disabled={!h.signedAudio}
-                                        onClick={() => {
-                                            setNewQueue([h], 0);
-                                        }}
-                                    >
-                                        ▶ Odtwórz
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Istniejące utwory */}
             <div style={styles.section}>
                 <h3 style={styles.title}>Utwory</h3>
 
@@ -187,7 +112,9 @@ export default function HomePage() {
                             <div style={styles.cardBody}>
                                 <div style={styles.name}>{s.songName || `Utwór ${s.songID}`}</div>
 
-                                <div style={{ fontSize: 12, opacity: 0.75 }}>{s.creatorName || "—"}</div>
+                                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                    {s.creatorName || "—"}
+                                </div>
 
                                 <button
                                     style={{
@@ -208,33 +135,62 @@ export default function HomePage() {
                     ))}
                 </div>
             </div>
+            {/* Podcasty */}
+            <div style={styles.section}>
+                <h3 style={styles.title}>Podcasty</h3>
+
+                {podcastError && <div style={styles.error}>{podcastError}</div>}
+
+                {podcasts.length === 0 ? (
+                    <div style={{ opacity: 0.75 }}>Brak dostępnych podcastów.</div>
+                ) : (
+                    <div style={styles.grid}>
+                        {podcasts.map((p) => (
+                            <div key={p.podcastID} style={styles.card}>
+                                <div style={styles.cardTop}>
+                                    {p.signedCover ? (
+                                        <img src={p.signedCover} alt="" style={styles.cover} />
+                                    ) : (
+                                        <div style={styles.coverPlaceholder} />
+                                    )}
+                                </div>
+
+                                <div style={styles.cardBody}>
+                                    <div style={styles.name} title={p.title}>
+                                        {p.title}
+                                    </div>
+
+                                    <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                        {p.creatorName || "—"}
+                                    </div>
+
+                                    <button
+                                        style={{
+                                            ...styles.playBtn,
+                                            opacity: p.signedAudio ? 1 : 0.5,
+                                            cursor: p.signedAudio ? "pointer" : "not-allowed",
+                                        }}
+                                        disabled={!p.signedAudio}
+                                        onClick={() => {
+                                            const startIdx = podcastQueue.findIndex(
+                                                (x) => x.podcastID === p.podcastID
+                                            );
+                                            if (startIdx >= 0) {
+                                                setNewQueue(podcastQueue, startIdx);
+                                            }
+                                        }}
+                                    >
+                                        ▶ Odtwórz
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
         </div>
     );
-}
-
-// helper
-function mapHistoryToCard(i) {
-    if (i?.type === "song" && i.song) {
-        const item = mapSongToPlayerItem(i.song);
-        return {
-            key: `h-song-${i.historyID}`,
-            playedAt: i.playedAt,
-            ...item,
-            subtitle: item.creatorName || "—",
-        };
-    }
-
-    if (i?.type === "podcast" && i.podcast) {
-        const item = mapPodcastToPlayerItem(i.podcast);
-        return {
-            key: `h-podcast-${i.historyID}`,
-            playedAt: i.playedAt,
-            ...item,
-            subtitle: item.creatorName || "—",
-        };
-    }
-
-    return null;
 }
 
 const styles = {
@@ -262,27 +218,7 @@ const styles = {
         marginLeft: "auto",
     },
     section: { marginBottom: "40px" },
-    sectionHeaderRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
     title: { marginBottom: "15px" },
-
-    smallBtn: {
-        padding: "8px 10px",
-        borderRadius: 10,
-        border: "1px solid #2a2a2a",
-        background: "#1e1e1e",
-        color: "white",
-        cursor: "pointer",
-        fontWeight: 800,
-    },
-    smallBtnDanger: {
-        padding: "8px 10px",
-        borderRadius: 10,
-        border: "1px solid #5a2a2a",
-        background: "#2a1a1a",
-        color: "white",
-        cursor: "pointer",
-        fontWeight: 800,
-    },
 
     error: {
         background: "#2a1a1a",

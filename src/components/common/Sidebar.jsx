@@ -2,11 +2,12 @@ import { Link, useLocation } from "react-router-dom";
 import { useCallback, useMemo, useState } from "react";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { Library, Heart, Album, ListMusic, RefreshCw, Plus } from "lucide-react";
+import {Library, Heart, Album, ListMusic, RefreshCw, Plus, Mic2} from "lucide-react";
 
 export default function Sidebar() {
     const { token } = useAuth();
-    const { albums, playlists, favoriteSongs, loading, error, refetch } = useLibrary();
+    const { albums, playlists, favoriteSongs, favoritePodcasts, loading, error, refetch } =
+        useLibrary();
     const location = useLocation();
 
     const [creating, setCreating] = useState(false);
@@ -33,8 +34,11 @@ export default function Sidebar() {
         }));
     }, [playlists, location.pathname]);
 
-    const likedActive = location.pathname === "/liked";
+    const likedActive = location.pathname === "/liked-songs";
     const likedCount = (favoriteSongs || []).length;
+
+    const myEpisodesActive = location.pathname === "/my-episodes";
+    const myEpisodesCount = (favoritePodcasts || []).length;
 
     const createPlaylist = useCallback(async () => {
         if (!token) return;
@@ -78,7 +82,7 @@ export default function Sidebar() {
             {/* FIXED: LIKED SONGS */}
             <div style={{ padding: "0 12px 10px" }}>
                 <Link
-                    to="/liked"
+                    to="/liked-songs"
                     style={{ ...styles.item, ...(likedActive ? styles.itemActive : null) }}
                     title="Polubione utwory"
                 >
@@ -96,6 +100,33 @@ export default function Sidebar() {
                     <div style={{ minWidth: 0 }}>
                         <div style={styles.itemTitle}>Polubione utwory</div>
                         <div style={styles.itemSub}>{likedCount ? `${likedCount} utw.` : "—"}</div>
+                    </div>
+                </Link>
+            </div>
+
+            {/* Ulubione podcasty/Moje odcinki */}
+            <div style={{ padding: "0 12px 10px" }}>
+                <Link
+                    to="/my-episodes"
+                    style={{ ...styles.item, ...(myEpisodesActive ? styles.itemActive : null) }}
+                    title="Ulubione podcasty"
+                >
+                    <div style={styles.itemCover}>
+                        <div
+                            style={{
+                                ...styles.episodesCover,
+                                ...(myEpisodesActive ? styles.episodesCoverActive : null),
+                            }}
+                        >
+                            <Mic2 size={16} style={{ display: "block" }} />
+                        </div>
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                        <div style={styles.itemTitle}>Moje odcinki</div>
+                        <div style={styles.itemSub}>
+                            {myEpisodesCount ? `${myEpisodesCount} odc.` : "—"}
+                        </div>
                     </div>
                 </Link>
             </div>
@@ -136,11 +167,7 @@ export default function Sidebar() {
                         title={r.title}
                     >
                         <div style={styles.itemCover}>
-                            {r.cover ? (
-                                <img src={r.cover} alt="" style={styles.itemCoverImg} />
-                            ) : (
-                                <div style={styles.itemCoverPh} />
-                            )}
+                            {r.cover ? <img src={r.cover} alt="" style={styles.itemCoverImg} /> : <div style={styles.itemCoverPh} />}
                         </div>
 
                         <div style={{ minWidth: 0 }}>
@@ -184,11 +211,7 @@ export default function Sidebar() {
                         title={r.title}
                     >
                         <div style={styles.itemCover}>
-                            {r.cover ? (
-                                <img src={r.cover} alt="" style={styles.itemCoverImg} />
-                            ) : (
-                                <div style={styles.itemCoverPh} />
-                            )}
+                            {r.cover ? <img src={r.cover} alt="" style={styles.itemCoverImg} /> : <div style={styles.itemCoverPh} />}
                         </div>
 
                         <div style={{ minWidth: 0 }}>
@@ -286,6 +309,24 @@ const styles = {
     },
 
     likedCoverActive: {
+        filter: "brightness(1.05)",
+        boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
+    },
+
+    episodesCover: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background:
+            "linear-gradient(135deg, rgba(255,200,0,0.95) 0%, rgba(255,80,180,0.95) 55%, rgba(120,70,255,0.95) 100%)",
+        boxShadow: "0 8px 18px rgba(0,0,0,0.35)",
+        color: "white",
+    },
+
+    episodesCoverActive: {
         filter: "brightness(1.05)",
         boxShadow: "0 10px 22px rgba(0,0,0,0.45)",
     },

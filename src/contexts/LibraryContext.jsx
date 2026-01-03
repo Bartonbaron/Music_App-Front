@@ -43,6 +43,7 @@ export function LibraryProvider({ children }) {
         } catch (_) {
             /* noop */
         }
+
         const ac = new AbortController();
         abortRef.current = ac;
 
@@ -50,13 +51,12 @@ export function LibraryProvider({ children }) {
         setError("");
 
         try {
-            const [
-                likedRes,
-                albumsRes,
-                playlistsRes,
-                libRes,
-            ] = await Promise.all([
+            const [likedRes, favPodsRes, albumsRes, playlistsRes] = await Promise.all([
                 fetch("http://localhost:3000/api/libraries/liked-songs", {
+                    headers: { Authorization: `Bearer ${token}` },
+                    signal: ac.signal,
+                }),
+                fetch("http://localhost:3000/api/libraries/favorite-podcasts", {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
                 }),
@@ -68,19 +68,18 @@ export function LibraryProvider({ children }) {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
                 }),
-                fetch("http://localhost:3000/api/libraries", {
-                    headers: { Authorization: `Bearer ${token}` },
-                    signal: ac.signal,
-                }),
             ]);
 
             const likedData = await likedRes.json().catch(() => ({}));
+            const favPodsData = await favPodsRes.json().catch(() => ({}));
             const albumsData = await albumsRes.json().catch(() => ({}));
             const playlistsData = await playlistsRes.json().catch(() => ({}));
-            const libData = await libRes.json().catch(() => ({}));
 
             if (!likedRes.ok) {
                 throw new Error(likedData?.message || "Failed to fetch liked songs");
+            }
+            if (!favPodsRes.ok) {
+                throw new Error(favPodsData?.message || "Failed to fetch favorite podcasts");
             }
             if (!albumsRes.ok) {
                 throw new Error(albumsData?.message || "Failed to fetch library albums");
@@ -88,18 +87,15 @@ export function LibraryProvider({ children }) {
             if (!playlistsRes.ok) {
                 throw new Error(playlistsData?.message || "Failed to fetch library playlists");
             }
-            if (!libRes.ok) {
-                throw new Error(libData?.message || "Failed to fetch library");
-            }
 
+            // Single source of truth:
+            // - liked songs -> /libraries/liked-songs
+            // - favorite podcasts -> /libraries/favorite-podcasts
             setFavoriteSongs(Array.isArray(likedData) ? likedData : likedData.songs || []);
+            setFavoritePodcasts(Array.isArray(favPodsData) ? favPodsData : favPodsData.podcasts || []);
 
             setAlbums(Array.isArray(albumsData) ? albumsData : albumsData.albums || []);
-
             setPlaylists(Array.isArray(playlistsData) ? playlistsData : playlistsData.playlists || []);
-
-            setFavoritePodcasts(libData.favoritePodcasts || []);
-
         } catch (e) {
             if (e?.name === "AbortError") return;
             setError(e?.message || "Library error");
@@ -108,6 +104,7 @@ export function LibraryProvider({ children }) {
         }
     }, [token]);
 
+    // -------- LIKED SONGS --------
     const toggleSongLike = useCallback(
         async (songID, isLiked) => {
             if (!token) return { success: false, message: "Brak tokenu" };
@@ -143,6 +140,45 @@ export function LibraryProvider({ children }) {
         return set;
     }, [favoriteSongs]);
 
+    // -------- FAVORITE PODCASTS / "MOJE ODCINKI" --------
+    const favoritePodcastIds = useMemo(() => {
+        const set = new Set();
+        (favoritePodcasts || []).forEach((p) => {
+            const id = p?.podcastID ?? p?.podcast?.podcastID;
+            if (id != null) set.add(String(id));
+        });
+        return set;
+    }, [favoritePodcasts]);
+
+    const togglePodcastFavorite = useCallback(
+        async (podcastID, isFavorite) => {
+            if (!token) return { success: false, message: "Brak tokenu" };
+            if (!podcastID) return { success: false, message: "Brak podcastID" };
+
+            try {
+                const res = await fetch(
+                    `http://localhost:3000/api/podcasts/${podcastID}/${isFavorite ? "unfavorite" : "favorite"}`,
+                    {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` },
+                    }
+                );
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    return { success: false, message: data?.message || "Favorite update failed" };
+                }
+
+                await refetch();
+                return { success: true };
+            } catch (e) {
+                return { success: false, message: e?.message || "Network error" };
+            }
+        },
+        [token, refetch]
+    );
+
+    // -------- LIBRARY TOGGLES --------
     const toggleAlbumInLibrary = useCallback(
         async (albumID, isInLibrary) => {
             if (!token) return { success: false, message: "Brak tokenu" };
@@ -202,15 +238,19 @@ export function LibraryProvider({ children }) {
         () => ({
             albums,
             playlists,
+
             favoriteSongs,
-            favoritePodcasts,
             likedSongIds,
+
+            favoritePodcasts,
+            favoritePodcastIds,
 
             loading,
             error,
             refetch,
 
             toggleSongLike,
+            togglePodcastFavorite,
             toggleAlbumInLibrary,
             togglePlaylistInLibrary,
         }),
@@ -218,12 +258,14 @@ export function LibraryProvider({ children }) {
             albums,
             playlists,
             favoriteSongs,
-            favoritePodcasts,
             likedSongIds,
+            favoritePodcasts,
+            favoritePodcastIds,
             loading,
             error,
             refetch,
             toggleSongLike,
+            togglePodcastFavorite,
             toggleAlbumInLibrary,
             togglePlaylistInLibrary,
         ]

@@ -1,7 +1,6 @@
 import { apiFetch } from "./http";
 
 export async function fetchSongs(token) {
-    // u Ciebie to było: GET /api/songs
     return apiFetch("/songs", { token });
 }
 

@@ -27,9 +27,13 @@ function formatTotalDuration(sec) {
 
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
+    const r = total % 60;
 
-    if (h > 0) return `${h} godz ${m} min`;
-    return `${m} min`;
+    if (h > 0) {
+        return `${h} godz ${m} min`;
+    }
+
+    return `${m} min ${r} s`;
 }
 
 function formatFullDate(value) {

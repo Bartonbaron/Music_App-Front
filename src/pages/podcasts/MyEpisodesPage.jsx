@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
-import { Heart, Play } from "lucide-react";
+import { Mic2, Play } from "lucide-react";
 
-import { usePlayer } from "../contexts/PlayerContext";
-import { useLibrary } from "../contexts/LibraryContext";
+import { usePlayer } from "../../contexts/PlayerContext";
+import { useLibrary } from "../../contexts/LibraryContext";
+
+import FavoritePodcastButton from "../../components/common/FavoritePodcastButton";
 
 function formatTrackDuration(sec) {
     const s = Number(sec);
@@ -29,76 +31,54 @@ function formatTotalDuration(sec) {
     return `${m} min ${r} s`;
 }
 
-export default function LikedSongsPage() {
+export default function MyEpisodesPage() {
     const { setNewQueue } = usePlayer();
-    const { favoriteSongs, loading, error, likedSongIds, toggleSongLike } = useLibrary();
+    const { favoritePodcasts, loading, error } = useLibrary();
 
     const [toast, setToast] = useState(null);
-    const [likingId, setLikingId] = useState(null);
 
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
-    const songs = useMemo(() => {
-        return Array.isArray(favoriteSongs) ? favoriteSongs : [];
-    }, [favoriteSongs]);
+    const podcasts = useMemo(() => {
+        return Array.isArray(favoritePodcasts) ? favoritePodcasts : [];
+    }, [favoritePodcasts]);
 
     const queueItems = useMemo(() => {
-        return songs
-            .map((s) => ({
-                type: "song",
-                songID: s.songID,
-                songName: s.songName,
-                creatorName: s.creatorName || "—",
-                signedAudio: s.signedAudio || null,
-                signedCover: s.signedCover || null,
-                duration: s.duration,
-                raw: s,
+        return podcasts
+            .map((p) => ({
+                type: "podcast",
+                podcastID: p.podcastID,
+                podcastName: p.podcastName,
+                title: p.podcastName ?? p.title ?? `Podcast ${p.podcastID}`,
+                creatorName: p.creatorName || "—",
+                signedAudio: p.signedAudio || null,
+                signedCover: p.signedCover || null,
+                duration: p.duration,
+                raw: p,
             }))
             .filter((x) => !!x.signedAudio);
-    }, [songs]);
+    }, [podcasts]);
 
-    const queueIndexBySongId = useMemo(() => {
+    const queueIndexByPodcastId = useMemo(() => {
         const m = new Map();
-        queueItems.forEach((q, i) => m.set(String(q.songID), i));
+        queueItems.forEach((q, i) => m.set(String(q.podcastID), i));
         return m;
     }, [queueItems]);
 
     const totalDuration = useMemo(() => {
-        return songs.reduce((acc, s) => {
-            const d = Number(s?.duration);
+        return podcasts.reduce((acc, p) => {
+            const d = Number(p?.duration);
             return acc + (Number.isFinite(d) ? d : 0);
         }, 0);
-    }, [songs]);
+    }, [podcasts]);
 
     const playAll = useCallback(() => {
         if (!queueItems.length) return;
         setNewQueue(queueItems, 0);
     }, [queueItems, setNewQueue]);
-
-    const toggleLike = useCallback(
-        async (songID) => {
-            if (!toggleSongLike) {
-                showToast("Brak toggleSongLike w LibraryContext", "error");
-                return;
-            }
-
-            const liked = likedSongIds?.has(String(songID));
-            setLikingId(songID);
-
-            const result = await toggleSongLike(songID, liked);
-            if (result?.success) {
-                showToast(liked ? "Usunięto z polubionych" : "Dodano do polubionych", "success");
-            } else {
-                showToast(result?.message || "Błąd polubień", "error");
-            }
-
-            setLikingId(null);
-        },
-        [toggleSongLike, likedSongIds, showToast]
-    );
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (error) return <div style={styles.page}>{error}</div>;
@@ -121,24 +101,25 @@ export default function LikedSongsPage() {
             {/* HEADER */}
             <div style={styles.header}>
                 <div style={styles.coverWrap}>
-                    <div style={styles.likedCover}>
-                        <Heart
+                    <div style={styles.episodesCover}>
+                        <Mic2
                             style={{
                                 width: 84,
                                 height: 84,
                                 display: "block",
                                 filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.45))",
-                               }}
+                            }}
+                            strokeWidth={2.2}
                         />
                     </div>
                 </div>
 
                 <div style={{ minWidth: 0 }}>
                     <div style={styles.kicker}>PLAYLISTA</div>
-                    <h2 style={styles.h2}>Polubione utwory</h2>
+                    <h2 style={styles.h2}>Moje odcinki</h2>
 
                     <div style={styles.metaLine}>
-                        <span style={{ opacity: 0.85 }}>{songs.length} utworów</span>
+                        <span style={{ opacity: 0.85 }}>{podcasts.length} odcinków</span>
                         <span style={{ opacity: 0.65 }}> • </span>
                         <span style={{ opacity: 0.85 }}>{formatTotalDuration(totalDuration)}</span>
                     </div>
@@ -153,6 +134,7 @@ export default function LikedSongsPage() {
                                 cursor: queueItems.length ? "pointer" : "not-allowed",
                             }}
                             title="Odtwórz"
+                            type="button"
                         >
                             <Play size={16} style={{ display: "block" }} /> Odtwórz
                         </button>
@@ -162,17 +144,14 @@ export default function LikedSongsPage() {
 
             {/* LIST */}
             <div style={styles.list}>
-                {songs.length === 0 ? <div style={styles.hint}>Brak polubionych utworów</div> : null}
+                {podcasts.length === 0 ? <div style={styles.hint}>Brak zapisanych odcinków</div> : null}
 
-                {songs.map((s, idx) => {
-                    const queueIdx = queueIndexBySongId.get(String(s.songID));
+                {podcasts.map((p, idx) => {
+                    const queueIdx = queueIndexByPodcastId.get(String(p.podcastID));
                     const playable = queueIdx != null;
 
-                    const liked = likedSongIds?.has(String(s.songID));
-                    const likeBusy = likingId === s.songID;
-
                     return (
-                        <div key={s.songID || idx} style={styles.row}>
+                        <div key={p.podcastID || idx} style={styles.row}>
                             <button
                                 onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
                                 disabled={!playable}
@@ -182,6 +161,7 @@ export default function LikedSongsPage() {
                                     cursor: playable ? "pointer" : "not-allowed",
                                 }}
                                 title="Odtwórz od tego"
+                                type="button"
                             >
                                 ▶
                             </button>
@@ -189,27 +169,18 @@ export default function LikedSongsPage() {
                             <div style={styles.trackNo}>{idx + 1}.</div>
 
                             <div style={styles.trackMain}>
-                                <div style={styles.trackTitle}>{s.songName || "Utwór"}</div>
-                                <div style={styles.trackSub}>{s.creatorName || "—"}</div>
+                                <div style={styles.trackTitle}>{p.podcastName || p.title || "Podcast"}</div>
+                                <div style={styles.trackSub}>{p.creatorName || "—"}</div>
                             </div>
 
-                            <button
-                                onClick={() => toggleLike(s.songID)}
-                                disabled={likeBusy}
-                                title={liked ? "Usuń z polubionych" : "Polub"}
-                                style={{
-                                    ...styles.likeBtn,
-                                    opacity: likeBusy ? 0.6 : 1,
-                                    cursor: likeBusy ? "not-allowed" : "pointer",
-                                }}
-                            >
-                                <Heart
-                                    size={16}
-                                    style={{ display: "block", fill: liked ? "currentColor" : "none" }}
-                                />
-                            </button>
+                            <FavoritePodcastButton
+                                podcastID={p.podcastID}
+                                size={16}
+                                onToast={showToast}
+                                style={styles.favBtn}
+                            />
 
-                            <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
+                            <div style={styles.trackTime}>{formatTrackDuration(p.duration)}</div>
                         </div>
                     );
                 })}
@@ -244,7 +215,7 @@ const styles = {
         flex: "0 0 auto",
     },
 
-    likedCover: {
+    episodesCover: {
         width: "100%",
         height: "100%",
         borderRadius: 14,
@@ -252,7 +223,7 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         background:
-            "linear-gradient(135deg, rgba(29,185,84,1) 0%, rgba(120,70,255,1) 55%, rgba(255,80,180,1) 100%)",
+            "linear-gradient(135deg, rgba(255,200,0,0.95) 0%, rgba(255,80,180,0.95) 55%, rgba(120,70,255,0.95) 100%)",
         boxShadow: "0 20px 50px rgba(0,0,0,0.55)",
         color: "white",
     },
@@ -300,19 +271,20 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        lineHeight: 0,
     },
 
-    likeBtn: {
+    favBtn: {
         width: 38,
         height: 34,
         borderRadius: 10,
         border: "1px solid #333",
         background: "transparent",
-        color: "#1db954",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        lineHeight: 0,
     },
 
     trackNo: { opacity: 0.7, textAlign: "right" },

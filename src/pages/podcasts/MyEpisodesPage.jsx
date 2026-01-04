@@ -1,58 +1,49 @@
 import { useCallback, useMemo, useState } from "react";
-import { Mic2, Play } from "lucide-react";
+import { Mic2, Heart, Play } from "lucide-react";
 
+import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
+import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
 
-import FavoritePodcastButton from "../../components/common/FavoritePodcastButton";
-
-function formatTrackDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-    const m = Math.floor(total / 60);
-    const r = total % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
+function pickPodcastCover(p) {
+    return p?.signedCover || null;
 }
 
-function formatTotalDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const r = total % 60;
-
-    if (h > 0) {
-        return `${h} godz ${m} min`;
-    }
-
-    return `${m} min ${r} s`;
+// lokalny helper: usuwanie z ulubionych (Moje odcinki)
+async function unfavoritePodcast(token, podcastID) {
+    const res = await fetch(`http://localhost:3000/api/podcasts/${podcastID}/unfavorite`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || "Failed to remove from favorites");
+    return data;
 }
 
 export default function MyEpisodesPage() {
     const { setNewQueue } = usePlayer();
-    const { favoritePodcasts, loading, error } = useLibrary();
+    const { token } = useAuth();
+    const { favoritePodcasts, favoritePodcastIds, loading, error, refetch } = useLibrary();
 
     const [toast, setToast] = useState(null);
+    const [busyId, setBusyId] = useState(null);
 
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
-    const podcasts = useMemo(() => {
+    const episodes = useMemo(() => {
         return Array.isArray(favoritePodcasts) ? favoritePodcasts : [];
     }, [favoritePodcasts]);
 
     const queueItems = useMemo(() => {
-        return podcasts
+        return episodes
             .map((p) => ({
                 type: "podcast",
                 podcastID: p.podcastID,
-                podcastName: p.podcastName,
-                title: p.podcastName ?? p.title ?? `Podcast ${p.podcastID}`,
+                title: p.title || p.podcastName || `Podcast ${p.podcastID}`,
                 creatorName: p.creatorName || "—",
                 signedAudio: p.signedAudio || null,
                 signedCover: p.signedCover || null,
@@ -60,25 +51,47 @@ export default function MyEpisodesPage() {
                 raw: p,
             }))
             .filter((x) => !!x.signedAudio);
-    }, [podcasts]);
+    }, [episodes]);
 
-    const queueIndexByPodcastId = useMemo(() => {
+    const queueIndexById = useMemo(() => {
         const m = new Map();
         queueItems.forEach((q, i) => m.set(String(q.podcastID), i));
         return m;
     }, [queueItems]);
 
     const totalDuration = useMemo(() => {
-        return podcasts.reduce((acc, p) => {
+        return episodes.reduce((acc, p) => {
             const d = Number(p?.duration);
             return acc + (Number.isFinite(d) ? d : 0);
         }, 0);
-    }, [podcasts]);
+    }, [episodes]);
 
     const playAll = useCallback(() => {
         if (!queueItems.length) return;
         setNewQueue(queueItems, 0);
     }, [queueItems, setNewQueue]);
+
+    const removeFromMyEpisodes = useCallback(
+        async (podcastID) => {
+            if (!token) {
+                showToast("Zaloguj się, aby usuwać odcinki z biblioteki", "error");
+                return;
+            }
+            if (!podcastID) return;
+
+            setBusyId(podcastID);
+            try {
+                await unfavoritePodcast(token, podcastID);
+                await refetch?.();
+                showToast("Usunięto z Moich odcinków", "success");
+            } catch (e) {
+                showToast(e?.message || "Błąd usuwania", "error");
+            } finally {
+                setBusyId(null);
+            }
+        },
+        [token, refetch, showToast]
+    );
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (error) return <div style={styles.page}>{error}</div>;
@@ -102,15 +115,7 @@ export default function MyEpisodesPage() {
             <div style={styles.header}>
                 <div style={styles.coverWrap}>
                     <div style={styles.episodesCover}>
-                        <Mic2
-                            style={{
-                                width: 84,
-                                height: 84,
-                                display: "block",
-                                filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.45))",
-                            }}
-                            strokeWidth={2.2}
-                        />
+                        <Mic2 strokeWidth={2.2} style={{ width: 84, height: 84, display: "block", opacity: 0.9 }} />
                     </div>
                 </div>
 
@@ -119,7 +124,7 @@ export default function MyEpisodesPage() {
                     <h2 style={styles.h2}>Moje odcinki</h2>
 
                     <div style={styles.metaLine}>
-                        <span style={{ opacity: 0.85 }}>{podcasts.length} odcinków</span>
+                        <span style={{ opacity: 0.85 }}>{episodes.length} pozycji</span>
                         <span style={{ opacity: 0.65 }}> • </span>
                         <span style={{ opacity: 0.85 }}>{formatTotalDuration(totalDuration)}</span>
                     </div>
@@ -134,7 +139,6 @@ export default function MyEpisodesPage() {
                                 cursor: queueItems.length ? "pointer" : "not-allowed",
                             }}
                             title="Odtwórz"
-                            type="button"
                         >
                             <Play size={16} style={{ display: "block" }} /> Odtwórz
                         </button>
@@ -144,11 +148,17 @@ export default function MyEpisodesPage() {
 
             {/* LIST */}
             <div style={styles.list}>
-                {podcasts.length === 0 ? <div style={styles.hint}>Brak zapisanych odcinków</div> : null}
+                {episodes.length === 0 ? <div style={styles.hint}>Brak zapisanych odcinków</div> : null}
 
-                {podcasts.map((p, idx) => {
-                    const queueIdx = queueIndexByPodcastId.get(String(p.podcastID));
+                {episodes.map((p, idx) => {
+                    const queueIdx = queueIndexById.get(String(p.podcastID));
                     const playable = queueIdx != null;
+
+                    const title = p.title || p.podcastName || `Podcast ${p.podcastID}`;
+                    const creatorName = p.creatorName || "—";
+
+                    const isFav = favoritePodcastIds?.has(String(p.podcastID));
+                    const isBusy = busyId === p.podcastID;
 
                     return (
                         <div key={p.podcastID || idx} style={styles.row}>
@@ -161,24 +171,43 @@ export default function MyEpisodesPage() {
                                     cursor: playable ? "pointer" : "not-allowed",
                                 }}
                                 title="Odtwórz od tego"
-                                type="button"
                             >
                                 ▶
                             </button>
 
+                            {/* Mini cover */}
+                            <div style={styles.miniCoverWrap}>
+                                {pickPodcastCover(p) ? (
+                                    <img src={pickPodcastCover(p)} alt="" style={styles.miniCoverImg} />
+                                ) : (
+                                    <div style={styles.miniCoverPh} />
+                                )}
+                            </div>
+
                             <div style={styles.trackNo}>{idx + 1}.</div>
 
                             <div style={styles.trackMain}>
-                                <div style={styles.trackTitle}>{p.podcastName || p.title || "Podcast"}</div>
-                                <div style={styles.trackSub}>{p.creatorName || "—"}</div>
+                                <div style={styles.trackTitle} title={title}>
+                                    {title}
+                                </div>
+                                <div style={styles.trackSub} title={creatorName}>
+                                    {creatorName}
+                                </div>
                             </div>
 
-                            <FavoritePodcastButton
-                                podcastID={p.podcastID}
-                                size={16}
-                                onToast={showToast}
-                                style={styles.favBtn}
-                            />
+                            <button
+                                onClick={() => removeFromMyEpisodes(p.podcastID)}
+                                disabled={!isFav || isBusy}
+                                title="Usuń z Moich odcinków"
+                                style={{
+                                    ...styles.likeBtn,
+                                    opacity: !isFav || isBusy ? 0.5 : 1,
+                                    cursor: !isFav || isBusy ? "not-allowed" : "pointer",
+                                }}
+                                type="button"
+                            >
+                                <Heart size={16} style={{ display: "block" }} fill="currentColor" />
+                            </button>
 
                             <div style={styles.trackTime}>{formatTrackDuration(p.duration)}</div>
                         </div>
@@ -222,8 +251,7 @@ const styles = {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background:
-            "linear-gradient(135deg, rgba(255,200,0,0.95) 0%, rgba(255,80,180,0.95) 55%, rgba(120,70,255,0.95) 100%)",
+        background: "linear-gradient(135deg, rgba(255,200,0,0.95) 0%, rgba(255,80,180,0.95) 55%, rgba(120,70,255,0.95) 100%)",
         boxShadow: "0 20px 50px rgba(0,0,0,0.55)",
         color: "white",
     },
@@ -253,7 +281,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 40px 1fr 44px 60px",
+        gridTemplateColumns: "44px 44px 40px minmax(0, 1fr) 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -274,12 +302,28 @@ const styles = {
         lineHeight: 0,
     },
 
-    favBtn: {
+    miniCoverWrap: {
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#2a2a2a",
+        border: "1px solid #2a2a2a",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        justifySelf: "center",
+    },
+    miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+    miniCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
+
+    likeBtn: {
         width: 38,
         height: 34,
         borderRadius: 10,
         border: "1px solid #333",
         background: "transparent",
+        color: "#1db954",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -287,11 +331,11 @@ const styles = {
         lineHeight: 0,
     },
 
-    trackNo: { opacity: 0.7, textAlign: "right" },
+    trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 
-    trackMain: { minWidth: 0 },
+    trackMain: { minWidth: 0, overflow: "hidden" },
     trackTitle: { fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     trackSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
-    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right" },
+    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 };

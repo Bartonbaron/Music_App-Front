@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Mic2 } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
@@ -12,6 +13,7 @@ import FavoritePodcastButton from "../../components/common/FavoritePodcastButton
 export default function PodcastsPage() {
     const { token } = useAuth();
     const { setNewQueue } = usePlayer();
+    const navigate = useNavigate();
 
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -86,33 +88,44 @@ export default function PodcastsPage() {
                         style={styles.card}
                         role="button"
                         tabIndex={0}
-                        onClick={() => setNewQueue(items, idx)}
+                        onClick={() => navigate(`/podcasts/${p.podcastID}`)}
                         onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") setNewQueue(items, idx);
+                            if (e.key === "Enter" || e.key === " ") navigate(`/podcasts/${p.podcastID}`);
                         }}
-                        title="Kliknij, aby odtworzyć od tego"
+                        title="Otwórz szczegóły"
                     >
                         <div style={styles.cardTop}>
                             {p.signedCover ? (
-                                <img src={p.signedCover} alt="" style={styles.cover} />
+                                <img
+                                    src={p.signedCover}
+                                    alt=""
+                                    style={styles.cover}
+                                    onClick={() => navigate(`/podcasts/${p.podcastID}`)}
+                                />
                             ) : (
                                 <div style={styles.coverPh} />
                             )}
                         </div>
 
                         <div style={styles.cardBody}>
-                            <div style={styles.name} title={p.title}>
+                            <div
+                                style={styles.name}
+                                title={p.title}
+                                onClick={() => navigate(`/podcasts/${p.podcastID}`)}
+                            >
                                 {p.title || `Podcast ${p.podcastID}`}
                             </div>
 
                             <div style={styles.sub}>{p.creatorName || "—"}</div>
 
                             <div style={styles.actions}>
-                                <FavoritePodcastButton
-                                    podcastID={p.podcastID}
-                                    size={16}
-                                    style={styles.iconBtn}
-                                />
+                                <div onClick={(e) => e.stopPropagation()}>
+                                    <FavoritePodcastButton
+                                        podcastID={p.podcastID}
+                                        size={16}
+                                        style={styles.iconBtn}
+                                    />
+                                </div>
 
                                 <button
                                     style={styles.playBtn}
@@ -199,7 +212,7 @@ const styles = {
     },
 
     cardTop: { height: 160, background: "#2a2a2a" },
-    cover: { width: "100%", height: "100%", objectFit: "cover" },
+    cover: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
     coverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
 
     cardBody: {

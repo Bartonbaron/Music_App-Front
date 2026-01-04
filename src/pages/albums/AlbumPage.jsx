@@ -10,31 +10,7 @@ import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
 import SongActionsModal from "../../components/common/SongActionsModal";
-
-function formatTrackDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-    const m = Math.floor(total / 60);
-    const r = total % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function formatTotalDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const r = total % 60;
-
-    if (h > 0) {
-        return `${h} godz ${m} min`;
-    }
-
-    return `${m} min ${r} s`;
-}
+import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
 
 function formatFullDate(value) {
     if (!value) return null;

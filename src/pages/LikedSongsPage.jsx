@@ -3,30 +3,15 @@ import { Heart, Play } from "lucide-react";
 
 import { usePlayer } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
+import { formatTrackDuration, formatTotalDuration } from "../utils/time.js";
 
-function formatTrackDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-    const m = Math.floor(total / 60);
-    const r = total % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function formatTotalDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const r = total % 60;
-
-    if (h > 0) {
-        return `${h} godz ${m} min`;
-    }
-
-    return `${m} min ${r} s`;
+function pickSongCover(song) {
+    return (
+        song?.album?.signedCover ||
+        song?.signedCover ||
+        song?.effectiveCover ||
+        null
+    );
 }
 
 export default function LikedSongsPage() {
@@ -54,6 +39,7 @@ export default function LikedSongsPage() {
                 creatorName: s.creatorName || "—",
                 signedAudio: s.signedAudio || null,
                 signedCover: s.signedCover || null,
+                album: s.album || null, // jeśli kiedyś backend to dołoży
                 duration: s.duration,
                 raw: s,
             }))
@@ -128,7 +114,7 @@ export default function LikedSongsPage() {
                                 height: 84,
                                 display: "block",
                                 filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.45))",
-                               }}
+                            }}
                         />
                     </div>
                 </div>
@@ -186,6 +172,19 @@ export default function LikedSongsPage() {
                                 ▶
                             </button>
 
+                            {/* Mini cover */}
+                            <div style={styles.miniCoverWrap}>
+                                {pickSongCover(s) ? (
+                                    <img
+                                        src={pickSongCover(s)}
+                                        alt=""
+                                        style={styles.miniCoverImg}
+                                    />
+                                ) : (
+                                    <div style={styles.miniCoverPh} />
+                                )}
+                            </div>
+
                             <div style={styles.trackNo}>{idx + 1}.</div>
 
                             <div style={styles.trackMain}>
@@ -203,10 +202,7 @@ export default function LikedSongsPage() {
                                     cursor: likeBusy ? "not-allowed" : "pointer",
                                 }}
                             >
-                                <Heart
-                                    size={16}
-                                    style={{ display: "block", fill: liked ? "currentColor" : "none" }}
-                                />
+                                <Heart size={16} style={{ display: "block", fill: liked ? "currentColor" : "none" }} />
                             </button>
 
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
@@ -252,7 +248,7 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         background:
-            "linear-gradient(135deg, rgba(29,185,84,1) 0%, rgba(120,70,255,1) 55%, rgba(255,80,180,1) 100%)",
+            "linear-gradient(135deg, rgba(29,185,84,0.95) 0%, rgba(120,70,255,0.95) 55%, rgba(255,80,180,0.95) 100%)",
         boxShadow: "0 20px 50px rgba(0,0,0,0.55)",
         color: "white",
     },
@@ -282,7 +278,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 40px 1fr 44px 60px",
+        gridTemplateColumns: "44px 44px 40px 1fr 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -300,7 +296,23 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        lineHeight: 0,
     },
+
+    miniCoverWrap: {
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#2a2a2a",
+        border: "1px solid #2a2a2a",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        justifySelf: "center",
+    },
+    miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+    miniCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
 
     likeBtn: {
         width: 38,
@@ -313,13 +325,14 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        lineHeight: 0,
     },
 
-    trackNo: { opacity: 0.7, textAlign: "right" },
+    trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 
-    trackMain: { minWidth: 0 },
+    trackMain: { minWidth: 0, overflow: "hidden" },
     trackTitle: { fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     trackSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
-    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right" },
+    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 };

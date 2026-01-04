@@ -16,9 +16,12 @@ import TestPlayerPage from "./pages/TestPlayerPage";
 import AlbumPage from "./pages/albums/AlbumPage";
 import PlaylistPage from "./pages/playlists/PlaylistPage.jsx";
 import PodcastsPage from "./pages/podcasts/PodcastsPage.jsx";
+import PodcastPage from "./pages/podcasts/PodcastPage.jsx";
 import MyEpisodesPage from "./pages/podcasts/MyEpisodesPage.jsx";
 import LikedSongsPage from "./pages/LikedSongsPage.jsx";
 import PlayHistoryPage from "./pages/history/PlayHistoryPage.jsx";
+import SongsPage from "./pages/songs/SongsPage.jsx";
+import SongPage from "./pages/songs/SongPage.jsx";
 
 import "./index.css";
 
@@ -41,9 +44,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/test-player" element={<TestPlayerPage />} />
                             <Route path="/playlists/:id" element={<PlaylistPage />} />
                             <Route path="/podcasts" element={<PodcastsPage />} />
+                            <Route path="/podcasts/:id" element={<PodcastPage />} />
                             <Route path="/my-episodes" element={<MyEpisodesPage />} />
                             <Route path="/albums/:id" element={<AlbumPage />} />
                             <Route path="/library" element={<HomePage />} />
+                            <Route path="/songs" element={<SongsPage />} />
+                            <Route path="/songs/:id" element={<SongPage />} />
                             <Route path="/liked-songs" element={<LikedSongsPage />} />
                             <Route path="/history" element={<PlayHistoryPage />} />
                         </Route>

@@ -10,29 +10,7 @@ import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
 import SongActionsModal from "../../components/common/SongActionsModal";
-
-function formatTrackDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(s);
-    const m = Math.floor(total / 60);
-    const r = total % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function formatTotalDuration(sec) {
-    const s = Number(sec);
-    if (!Number.isFinite(s) || s <= 0) return "—";
-    const total = Math.floor(totalOrZero(s));
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    if (h > 0) return `${h} godz ${m} min`;
-    return `${m} min`;
-}
-function totalOrZero(x) {
-    const n = Number(x);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-}
+import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
 
 function formatFullDate(value) {
     if (!value) return null;
@@ -44,6 +22,17 @@ function formatFullDate(value) {
         month: "2-digit",
         year: "numeric",
     });
+}
+
+function pickSongCover(song) {
+    // preferuj album cover jeśli jest
+    return (
+        song?.album?.signedCover ||
+        song?.album?.coverURL ||
+        song?.signedCover ||
+        song?.coverURL ||
+        null
+    );
 }
 
 export default function PlaylistPage() {
@@ -434,6 +423,15 @@ export default function PlaylistPage() {
                                 ▶
                             </button>
 
+                            {/* Mini cover (po prawej od play) */}
+                            <div style={styles.miniCoverWrap}>
+                                {pickSongCover(s) ? (
+                                    <img src={pickSongCover(s)} alt="" style={styles.miniCoverImg} />
+                                ) : (
+                                    <div style={styles.miniCoverPh} />
+                                )}
+                            </div>
+
                             <div style={styles.trackNo}>{row.position ?? idx + 1}.</div>
 
                             <div style={styles.trackMain}>
@@ -458,6 +456,7 @@ export default function PlaylistPage() {
 
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
+
                     );
                 })}
             </div>
@@ -531,7 +530,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 40px minmax(0, 1fr) 44px 44px 60px",
+        gridTemplateColumns: "44px 44px 34px minmax(0, 1fr) 44px 44px 70px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -549,6 +548,7 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        lineHeight: 0,
     },
 
     moreBtn: {
@@ -564,14 +564,29 @@ const styles = {
         padding: 0,
         fontWeight: 900,
         fontSize: 18,
-        lineHeight: 1,
+        lineHeight: 0,
     },
 
-    trackNo: { opacity: 0.7, textAlign: "right" },
+    miniCoverWrap: {
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#2a2a2a",
+        border: "1px solid #2a2a2a",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-    trackMain: { minWidth: 0 },
+    miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+    miniCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
+
+    trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },
+
+    trackMain: { minWidth: 0, overflow: "hidden" },
     trackTitle: { fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     trackSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
-    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right" },
+    trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 };

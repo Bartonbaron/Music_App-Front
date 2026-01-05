@@ -22,6 +22,8 @@ import LikedSongsPage from "./pages/LikedSongsPage.jsx";
 import PlayHistoryPage from "./pages/history/PlayHistoryPage.jsx";
 import SongsPage from "./pages/songs/SongsPage.jsx";
 import SongPage from "./pages/songs/SongPage.jsx";
+import UserPage from "./pages/users/UserPage.jsx";
+import PublicUserPage from "./pages/users/PublicUserPage";
 
 import "./index.css";
 
@@ -52,6 +54,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/songs/:id" element={<SongPage />} />
                             <Route path="/liked-songs" element={<LikedSongsPage />} />
                             <Route path="/history" element={<PlayHistoryPage />} />
+                            <Route path="/me" element={<UserPage />} />
+                            <Route path="/users/:id" element={<PublicUserPage/>} />
                         </Route>
 
                         {/* domyślne */}

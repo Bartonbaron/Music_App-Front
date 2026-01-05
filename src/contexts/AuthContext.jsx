@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     const fetchMe = useCallback(async (tkn) => {
-        const res = await fetch("http://localhost:3000/api/auth/me", {
+        const res = await fetch("http://localhost:3000/api/users/me", {
             headers: { Authorization: `Bearer ${tkn}` },
         });
 

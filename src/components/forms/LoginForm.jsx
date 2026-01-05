@@ -10,7 +10,7 @@ export default function LoginForm({ onSubmit, error, loading = false }) {
             <input
                 style={styles.input}
                 type="text"
-                placeholder="Nazwa użytkownika"
+                placeholder="Nazwa użytkownika lub email"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 required

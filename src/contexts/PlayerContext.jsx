@@ -19,17 +19,17 @@ export function PlayerProvider({ children }) {
 
     // stream counter refs
     const streamTimerRef = useRef(null);
-    const countedStreamKeyRef = useRef(null); // żeby nie liczyć wielokrotnie w ramach jednego odtworzenia
+    const countedStreamKeyRef = useRef(null);
     const STREAM_AFTER_SECONDS = 10;
 
-    // play history refs (żeby nie spamować POST przy wielokrotnych "play" / resume)
+    // play history refs
     const historySentKeyRef = useRef(null);
     const historySentAtRef = useRef(0);
-    const historyStartedOnceRef = useRef(false); // odróżnia "nowy start" od resume
-    const HISTORY_COOLDOWN_MS = 5 * 60 * 1000; // spójne z backendem
+    const historyStartedOnceRef = useRef(false);
+    const HISTORY_COOLDOWN_MS = 5 * 60 * 1000;
 
     // stan odtwarzacza
-    const [currentItem, setCurrentItem] = useState(null); // { type, songID/podcastID, signedAudio, signedCover, ... }
+    const [currentItem, setCurrentItem] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -38,7 +38,7 @@ export function PlayerProvider({ children }) {
     const [queue, setQueue] = useState([]);
     const [queueIndex, setQueueIndex] = useState(0);
 
-    const PREV_RESTART_THRESHOLD = 2; // sekundy
+    const PREV_RESTART_THRESHOLD = 2;
 
     // preferencje
     const [volume, setVolume] = useState(1);
@@ -71,11 +71,7 @@ export function PlayerProvider({ children }) {
 
     // helpers
     const extractSignedAudio = (item) =>
-        item?.signedAudio ||
-        item?.signedUrl ||
-        item?.audioURL ||
-        item?.fileURL ||
-        null;
+        item?.signedAudio || item?.signedUrl || item?.audioURL || item?.fileURL || null;
 
     const extractSignedCover = (item) =>
         item?.signedCover || item?.coverSigned || item?.coverURL || null;
@@ -96,8 +92,7 @@ export function PlayerProvider({ children }) {
             if (!token) return;
             if (!item) return;
 
-            const type =
-                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
             if (type !== "song") return;
 
             const songID = item?.songID;
@@ -109,7 +104,9 @@ export function PlayerProvider({ children }) {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 // eslint-disable-next-line no-unused-vars
-            } catch (_) { /**/ }
+            } catch (_) {
+                /**/
+            }
         },
         [token]
     );
@@ -121,11 +118,9 @@ export function PlayerProvider({ children }) {
             const key = keyOf(item);
             if (!key) return;
 
-            // nie licz ponownie dla tego samego itemu w ramach "tego odtworzenia"
             if (countedStreamKeyRef.current === key) return;
 
             streamTimerRef.current = setTimeout(() => {
-                // warunek: nadal gramy i nadal ten sam item
                 const cur = currentItemRef.current;
                 const stillSame = keyOf(cur) === key;
 
@@ -144,8 +139,7 @@ export function PlayerProvider({ children }) {
             if (!token) return;
             if (!item) return;
 
-            const type =
-                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
             if (!type) return;
 
             const payload =
@@ -169,7 +163,9 @@ export function PlayerProvider({ children }) {
                     body: JSON.stringify(payload),
                 });
                 // eslint-disable-next-line no-unused-vars
-            } catch (_) { /**/ }
+            } catch (_) {
+                /**/
+            }
         },
         [token]
     );
@@ -179,7 +175,6 @@ export function PlayerProvider({ children }) {
             await audioRef.current.play();
             setIsPlaying(true);
 
-            // jeśli zaczęliśmy grać – ustaw timer streamów
             const item = currentItemRef.current;
             if (item) scheduleStreamAfter10s(item);
         } catch (e) {
@@ -191,8 +186,6 @@ export function PlayerProvider({ children }) {
     const safePause = useCallback(() => {
         audioRef.current.pause();
         setIsPlaying(false);
-
-        // pauza -> nie liczymy streamu
         clearStreamTimer();
     }, [clearStreamTimer]);
 
@@ -215,34 +208,131 @@ export function PlayerProvider({ children }) {
 
         originalQueueRef.current = [];
 
-        // stream cleanup
         clearStreamTimer();
         countedStreamKeyRef.current = null;
 
-        // history cleanup
         historyStartedOnceRef.current = false;
         historySentKeyRef.current = null;
         historySentAtRef.current = 0;
     }, [clearStreamTimer]);
 
+    const updatePreferences = useCallback(
+        (prefs) => {
+            if (!token) return;
+
+            if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
+
+            prefsTimerRef.current = setTimeout(async () => {
+                try {
+                    await fetch("http://localhost:3000/api/users/preferences", {
+                        method: "PATCH",
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(prefs),
+                    });
+                } catch (err) {
+                    console.error("UPDATE PREFS ERROR:", err);
+                }
+            }, 250);
+        },
+        [token]
+    );
+
+    const setVolumePref = useCallback((value) => {
+        const v = Math.min(1, Math.max(0, Number(value)));
+        if (!Number.isFinite(v)) return;
+        audioRef.current.volume = v;
+        setVolume(v);
+    }, []);
+
+    const applyPlaybackMode = useCallback(
+        (mode, { persist } = { persist: false }) => {
+            if (!["normal", "shuffle", "repeat"].includes(mode)) return;
+
+            setPlaybackMode(mode);
+            playbackModeRef.current = mode;
+
+            if (persist) {
+                updatePreferences({ playbackMode: mode });
+            }
+
+            setQueue((prevQ) => {
+                if (!prevQ?.length) return prevQ;
+
+                const cur = currentItemRef.current;
+
+                const findIdx = (arr) => {
+                    if (!cur) return -1;
+                    return arr.findIndex(
+                        (x) =>
+                            (cur.songID && x.songID === cur.songID) ||
+                            (cur.podcastID && x.podcastID === cur.podcastID)
+                    );
+                };
+
+                if (mode === "shuffle") {
+                    if (!originalQueueRef.current?.length) {
+                        originalQueueRef.current = [...prevQ];
+                    }
+
+                    const idx = findIdx(prevQ);
+
+                    if (idx < 0) {
+                        const shuffled = shuffleArray(prevQ);
+                        setQueueIndex(0);
+                        return shuffled;
+                    }
+
+                    const selected = prevQ[idx];
+                    const rest = prevQ.filter((_, i) => i !== idx);
+                    const nextQ = [selected, ...shuffleArray(rest)];
+
+                    setQueueIndex(0);
+                    return nextQ;
+                }
+
+                // normal / repeat => wróć do oryginalnej
+                const base = originalQueueRef.current?.length ? originalQueueRef.current : prevQ;
+                const idx = findIdx(base);
+                setQueueIndex(idx >= 0 ? idx : 0);
+                return base;
+            });
+        },
+        [updatePreferences]
+    );
+
+    const setPlaybackModePref = useCallback(
+        (mode) => {
+            applyPlaybackMode(mode, { persist: false });
+        },
+        [applyPlaybackMode]
+    );
+
+    const setAutoplayPref = useCallback((flag) => {
+        const next = Boolean(flag);
+        setAutoplay(next);
+        autoplayRef.current = next;
+    }, []);
+
     useEffect(() => {
         if (!user) return;
 
         if (typeof user.volume === "number") {
-            audioRef.current.volume = user.volume;
-            setVolume(user.volume);
+            setVolumePref(user.volume);
         }
 
         if (user.playbackMode) {
-            setPlaybackMode(user.playbackMode);
+            setPlaybackModePref(user.playbackMode);
         }
 
         if (typeof user.autoplay === "boolean") {
-            setAutoplay(user.autoplay);
+            setAutoplayPref(user.autoplay);
         } else if (typeof user.autoplay === "number") {
-            setAutoplay(Boolean(user.autoplay));
+            setAutoplayPref(Boolean(user.autoplay));
         }
-    }, [user]);
+    }, [user, setVolumePref, setPlaybackModePref, setAutoplayPref]);
 
     // loadItem
     const loadSeqRef = useRef(0);
@@ -255,24 +345,19 @@ export function PlayerProvider({ children }) {
             const audio = audioRef.current;
             const seq = ++loadSeqRef.current;
 
-            // zatrzymaj poprzedni
             audio.pause();
             setIsPlaying(false);
 
-            // stream: nowy item -> reset timera + odblokuj liczenie dla nowego key
             clearStreamTimer();
             countedStreamKeyRef.current = null;
 
-            // history: nowy item -> pozwól wysłać wpis przy pierwszym realnym play
             historyStartedOnceRef.current = false;
             historySentKeyRef.current = null;
             historySentAtRef.current = 0;
 
-            // ustaw src
             audio.src = signedAudio;
             audio.currentTime = 0;
 
-            // reset stanu
             setProgress(0);
             setDuration(0);
             setCurrentItem({
@@ -348,29 +433,21 @@ export function PlayerProvider({ children }) {
     const playPrevious = useCallback(() => {
         const audio = audioRef.current;
 
-        // Jeśli minęło więcej niż x sekund to restart obecnego utworu
-        if (
-            audio &&
-            Number.isFinite(audio.currentTime) &&
-            audio.currentTime > PREV_RESTART_THRESHOLD
-        ) {
+        if (audio && Number.isFinite(audio.currentTime) && audio.currentTime > PREV_RESTART_THRESHOLD) {
             audio.currentTime = 0;
             setProgress(0);
 
-            // restart -> licz stream od nowa (po 10s)
             clearStreamTimer();
             countedStreamKeyRef.current = null;
+
             if (!audio.paused && currentItemRef.current) {
                 scheduleStreamAfter10s(currentItemRef.current);
             }
 
-            // restart -> NIE dopisuj do historii (to nadal ten sam "play")
             historyStartedOnceRef.current = true;
-
             return;
         }
 
-        // inaczej normalnie do poprzedniego w kolejce
         setQueueIndex((prev) => {
             const q = queueRef.current;
             if (!q.length) return prev;
@@ -407,19 +484,15 @@ export function PlayerProvider({ children }) {
                 ? playable.findIndex((x) => keyOf(x) === selectedKey)
                 : -1;
 
-            const selected =
-                selectedIndexPlayable >= 0 ? playable[selectedIndexPlayable] : playable[0];
+            const selected = selectedIndexPlayable >= 0 ? playable[selectedIndexPlayable] : playable[0];
 
             let finalQueue = [...playable];
 
-            // zapamiętaj kolejność "normalną"
             originalQueueRef.current = [...finalQueue];
 
             if (playbackModeRef.current === "shuffle") {
                 const selKey = keyOf(selected);
-                const rest = selKey
-                    ? finalQueue.filter((x) => keyOf(x) !== selKey)
-                    : finalQueue.slice(1);
+                const rest = selKey ? finalQueue.filter((x) => keyOf(x) !== selKey) : finalQueue.slice(1);
 
                 finalQueue = [selected, ...shuffleArray(rest)];
 
@@ -429,10 +502,7 @@ export function PlayerProvider({ children }) {
                 return;
             }
 
-            const startIdx = selectedKey
-                ? finalQueue.findIndex((x) => keyOf(x) === selectedKey)
-                : 0;
-
+            const startIdx = selectedKey ? finalQueue.findIndex((x) => keyOf(x) === selectedKey) : 0;
             const idx = startIdx >= 0 ? startIdx : 0;
 
             setQueue(finalQueue);
@@ -457,7 +527,6 @@ export function PlayerProvider({ children }) {
             clearStreamTimer();
             countedStreamKeyRef.current = null;
 
-            // kończy się -> następny item będzie "nowym startem"
             historyStartedOnceRef.current = false;
 
             if (playbackModeRef.current === "repeat") {
@@ -474,12 +543,8 @@ export function PlayerProvider({ children }) {
             const item = currentItemRef.current;
             if (!item) return;
 
-            // stream timer
             scheduleStreamAfter10s(item);
 
-            // --- HISTORY ---
-            // Jeśli to resume (po pauzie), nie dopisuj.
-            // Dopisuj tylko przy pierwszym realnym rozpoczęciu grania po loadItem.
             if (historyStartedOnceRef.current) return;
 
             const key = keyOf(item);
@@ -487,8 +552,7 @@ export function PlayerProvider({ children }) {
 
             const now = Date.now();
             const recentlySent =
-                historySentKeyRef.current === key &&
-                now - historySentAtRef.current < HISTORY_COOLDOWN_MS;
+                historySentKeyRef.current === key && now - historySentAtRef.current < HISTORY_COOLDOWN_MS;
 
             if (recentlySent) {
                 historyStartedOnceRef.current = true;
@@ -539,31 +603,6 @@ export function PlayerProvider({ children }) {
         setProgress(audio.currentTime);
     }, []);
 
-    // aktualizacja preferencji (z debounce)
-    const updatePreferences = useCallback(
-        (prefs) => {
-            if (!token) return;
-
-            if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
-
-            prefsTimerRef.current = setTimeout(async () => {
-                try {
-                    await fetch("http://localhost:3000/api/users/preferences", {
-                        method: "PATCH",
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify(prefs),
-                    });
-                } catch (err) {
-                    console.error("UPDATE PREFS ERROR:", err);
-                }
-            }, 250);
-        },
-        [token]
-    );
-
     useEffect(() => {
         if (!token) {
             stopAndReset();
@@ -571,86 +610,39 @@ export function PlayerProvider({ children }) {
         }
     }, [token, stopAndReset]);
 
+    // UI kontrolki (persistują do backendu)
     const changeVolume = useCallback(
         (value) => {
             const v = Math.min(1, Math.max(0, Number(value)));
             if (!Number.isFinite(v)) return;
-            audioRef.current.volume = v;
-            setVolume(v);
+            setVolumePref(v);
             updatePreferences({ volume: v });
         },
-        [updatePreferences]
+        [setVolumePref, updatePreferences]
     );
 
     const changePlaybackMode = useCallback(
         (mode) => {
-            if (!["normal", "shuffle", "repeat"].includes(mode)) return;
-
-            setPlaybackMode(mode);
-            updatePreferences({ playbackMode: mode });
-
-            setQueue((prevQ) => {
-                if (!prevQ?.length) return prevQ;
-
-                const cur = currentItemRef.current;
-
-                const findIdx = (arr) => {
-                    if (!cur) return -1;
-                    return arr.findIndex(
-                        (x) =>
-                            (cur.songID && x.songID === cur.songID) ||
-                            (cur.podcastID && x.podcastID === cur.podcastID)
-                    );
-                };
-
-                // Włącz shuffle
-                if (mode === "shuffle") {
-                    if (!originalQueueRef.current?.length) {
-                        originalQueueRef.current = [...prevQ];
-                    }
-
-                    const idx = findIdx(prevQ);
-
-                    if (idx < 0) {
-                        const shuffled = shuffleArray(prevQ);
-                        setQueueIndex(0);
-                        return shuffled;
-                    }
-
-                    const selected = prevQ[idx];
-                    const rest = prevQ.filter((_, i) => i !== idx);
-                    const nextQ = [selected, ...shuffleArray(rest)];
-
-                    setQueueIndex(0);
-                    return nextQ;
-                }
-
-                // Wyłącz shuffle (normal/repeat)
-                const base = originalQueueRef.current?.length ? originalQueueRef.current : prevQ;
-                const idx = findIdx(base);
-                setQueueIndex(idx >= 0 ? idx : 0);
-                return base;
-            });
+            applyPlaybackMode(mode, { persist: true });
         },
-        [updatePreferences]
+        [applyPlaybackMode]
     );
 
     const toggleAutoplay = useCallback(() => {
         setAutoplay((prev) => {
             const next = !prev;
+            autoplayRef.current = next;
             updatePreferences({ autoplay: next });
             return next;
         });
     }, [updatePreferences]);
 
-    // cleanup
     useEffect(() => {
         return () => {
             const audio = audioRef.current;
             audio.pause();
             audio.src = "";
             if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
-
             clearStreamTimer();
         };
     }, [clearStreamTimer]);
@@ -679,6 +671,11 @@ export function PlayerProvider({ children }) {
             volume,
             playbackMode,
             autoplay,
+
+            setVolumePref,
+            setPlaybackModePref,
+            setAutoplayPref,
+
             changeVolume,
             changePlaybackMode,
             toggleAutoplay,
@@ -701,6 +698,9 @@ export function PlayerProvider({ children }) {
             volume,
             playbackMode,
             autoplay,
+            setVolumePref,
+            setPlaybackModePref,
+            setAutoplayPref,
             changeVolume,
             changePlaybackMode,
             toggleAutoplay,

@@ -1,7 +1,9 @@
 import { Outlet, Navigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+
 import PlayerBar from "../player/PlayerBar";
 import Sidebar from "../common/Sidebar";
+import TopBar from "../common/TopBar";
 
 export default function AppLayout() {
     const { token, loading } = useAuth();
@@ -18,13 +20,17 @@ export default function AppLayout() {
                 <Sidebar />
             </aside>
 
-            <main style={styles.main}>
-                <div style={styles.content}>
-                    <Outlet />
-                </div>
-            </main>
+            <div style={styles.rightCol}>
+                <TopBar />
 
-            <PlayerBar />
+                <main style={styles.main}>
+                    <div style={styles.content}>
+                        <Outlet />
+                    </div>
+                </main>
+
+                <PlayerBar />
+            </div>
         </div>
     );
 }
@@ -36,6 +42,7 @@ const styles = {
         color: "white",
         display: "flex",
     },
+
     sidebar: {
         width: 280,
         borderRight: "1px solid #2a2a2a",
@@ -43,14 +50,22 @@ const styles = {
         padding: 14,
         boxSizing: "border-box",
     },
+
+    rightCol: {
+        flex: 1,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+    },
+
     main: {
         flex: 1,
         minWidth: 0,
+        overflow: "auto",
     },
+
     content: {
         padding: "20px 28px 120px",
-        minHeight: "100vh",
         boxSizing: "border-box",
-        flex: 1,
     },
 };

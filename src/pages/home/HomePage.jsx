@@ -88,9 +88,6 @@ export default function HomePage() {
             <header style={styles.header}>
                 <h2>Witaj{user ? `, ${user.userName}` : ""}!</h2>
 
-                <button style={styles.logoutBtn} onClick={logout}>
-                    Wyloguj
-                </button>
             </header>
 
             <div style={styles.section}>
@@ -207,16 +204,7 @@ const styles = {
         alignItems: "center",
         marginBottom: "35px",
     },
-    logoutBtn: {
-        padding: "10px 16px",
-        backgroundColor: "#E53935",
-        border: "none",
-        borderRadius: "6px",
-        cursor: "pointer",
-        color: "white",
-        fontWeight: "bold",
-        marginLeft: "auto",
-    },
+
     section: { marginBottom: "40px" },
     title: { marginBottom: "15px" },
 

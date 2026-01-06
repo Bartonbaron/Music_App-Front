@@ -283,8 +283,7 @@ const styles = {
         borderRadius: 12,
         border: "1px solid #333",
         background: "transparent",
-        // kolor spójny z "Moje odcinki" (zielone zostawiamy dla like'ów utworów)
-        color: "#ffc800",
+        color: "#1db954",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

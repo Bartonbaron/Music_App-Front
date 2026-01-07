@@ -8,7 +8,6 @@ import {
     Save,
     X,
     Play,
-    Music2,
     Mic2,
     Album as AlbumIcon,
     ListMusic,
@@ -18,8 +17,11 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 
 import { fetchMyCreatorProfile, updateMyCreatorBio } from "../../api/creators.api";
-import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter";
-import { formatTrackDuration } from "../../utils/time";
+import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
+
+import CreatorSongsManager from "../../components/creator/CreatorSongsManager";
+import CreatorPodcastsManager from "../../components/creator/CreatorPodcastsManager.jsx";
+import CreatorAlbumsManager from "../../components/creator/CreatorAlbumsManager.jsx";
 
 function pickAvatar(data) {
     return (
@@ -36,21 +38,12 @@ function pickCreatorName(data) {
     return data?.userName || data?.user?.userName || "Twórca";
 }
 
-function pickSongCover(s) {
-    return s?.signedCover || s?.coverSigned || s?.coverURL || null;
-}
 function pickPodcastCover(p) {
     return p?.signedCover || p?.coverSigned || p?.coverURL || null;
 }
+
 function pickPodcastTitle(p) {
     return p?.podcastName || p?.title || "Podcast";
-}
-
-function pickAlbumCover(a) {
-    return a?.signedCover || a?.coverSigned || a?.coverURL || null;
-}
-function pickAlbumName(a) {
-    return a?.albumName || a?.name || "Album";
 }
 
 function pickPlaylistCover(p) {
@@ -70,6 +63,10 @@ export default function CreatorPage() {
     const { token, user } = useAuth();
     const { setNewQueue, currentItem, isPlaying } = usePlayer();
 
+    // guard: tylko Creator
+    const roleName = user?.role?.roleName || user?.roleName || user?.role || "";
+    const isCreatorRole = roleName === "Creator";
+
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState("");
@@ -85,17 +82,14 @@ export default function CreatorPage() {
     const [savingBio, setSavingBio] = useState(false);
     const [editBio, setEditBio] = useState("");
 
-    const roleName = user?.role?.roleName || user?.roleName || user?.role || "";
-    const isCreatorRole = roleName === "Creator";
-
     const fetchMeCreator = useCallback(async () => {
+        if (!isCreatorRole) return;
+
         if (!token) {
             setMsg("Zaloguj się, aby zobaczyć panel twórcy.");
             setData(null);
             return;
         }
-
-        if (!isCreatorRole) return;
 
         setLoading(true);
         setMsg("");
@@ -108,12 +102,13 @@ export default function CreatorPage() {
         } finally {
             setLoading(false);
         }
-    }, [token, isCreatorRole]); // <-- ważne
+    }, [token, isCreatorRole]);
 
     useEffect(() => {
         fetchMeCreator();
     }, [fetchMeCreator]);
 
+    const creatorID = data?.creatorID ?? null;
     const creatorName = useMemo(() => pickCreatorName(data), [data]);
     const avatarSrc = useMemo(() => pickAvatar(data), [data]);
     const bio = data?.bio ?? "";
@@ -144,40 +139,6 @@ export default function CreatorPage() {
         const arr = data?.playlists ?? data?.publicPlaylists ?? [];
         return Array.isArray(arr) ? arr : [];
     }, [data]);
-
-    // ---- SONGS: rows + playable ----
-    const songsRows = useMemo(() => {
-        return songsRaw.map((s) => {
-            const item = mapSongToPlayerItem(s);
-            const signedAudio = item?.signedAudio || null;
-
-            return {
-                songID: s?.songID ?? item?.songID ?? null,
-                title: s?.songName || item?.title || "Utwór",
-                duration: s?.duration ?? null,
-                cover: item?.signedCover || pickSongCover(s),
-                playable: !!signedAudio,
-                playerItem: {
-                    ...item,
-                    creatorName: item.creatorName || creatorName || "—",
-                    duration: s?.duration ?? item?.duration,
-                    signedCover: item?.signedCover || pickSongCover(s),
-                    signedAudio,
-                },
-            };
-        });
-    }, [songsRaw, creatorName]);
-
-    const songsPlayable = useMemo(
-        () => songsRows.filter((r) => r.playable).map((r) => r.playerItem),
-        [songsRows]
-    );
-
-    const songPlayableIndexById = useMemo(() => {
-        const m = new Map();
-        songsPlayable.forEach((it, idx) => m.set(String(it.songID), idx));
-        return m;
-    }, [songsPlayable]);
 
     // ---- PODCASTS: rows + playable ----
     const podcastRows = useMemo(() => {
@@ -217,13 +178,6 @@ export default function CreatorPage() {
         [podcastRows]
     );
 
-    const podcastPlayableIndexById = useMemo(() => {
-        const m = new Map();
-        podcastsPlayable.forEach((it, idx) => m.set(String(it.podcastID), idx));
-        return m;
-    }, [podcastsPlayable]);
-
-    const canPlaySongs = songsPlayable.length > 0;
     const canPlayPodcasts = podcastsPlayable.length > 0;
 
     const isNowPlayingCreator = useMemo(() => {
@@ -232,39 +186,10 @@ export default function CreatorPage() {
         return !!cName && cName === creatorName;
     }, [currentItem, creatorName]);
 
-    const onPlayAllSongs = useCallback(() => {
-        if (!songsPlayable.length) return;
-        setNewQueue(songsPlayable, 0);
-    }, [songsPlayable, setNewQueue]);
-
     const onPlayAllPodcasts = useCallback(() => {
         if (!podcastsPlayable.length) return;
         setNewQueue(podcastsPlayable, 0);
     }, [podcastsPlayable, setNewQueue]);
-
-    const onPlaySongById = useCallback(
-        (songID) => {
-            const idx = songPlayableIndexById.get(String(songID));
-            if (idx == null) {
-                showToast("Brak pliku audio", "error");
-                return;
-            }
-            setNewQueue(songsPlayable, idx);
-        },
-        [songPlayableIndexById, songsPlayable, setNewQueue, showToast]
-    );
-
-    const onPlayPodcastById = useCallback(
-        (podcastID) => {
-            const idx = podcastPlayableIndexById.get(String(podcastID));
-            if (idx == null) {
-                showToast("Brak pliku audio", "error");
-                return;
-            }
-            setNewQueue(podcastsPlayable, idx);
-        },
-        [podcastPlayableIndexById, podcastsPlayable, setNewQueue, showToast]
-    );
 
     const openEditBio = useCallback(() => {
         setEditBio(bio || "");
@@ -274,6 +199,10 @@ export default function CreatorPage() {
     const saveBio = useCallback(async () => {
         if (!token) {
             showToast("Zaloguj się ponownie", "error");
+            return;
+        }
+        if (!creatorID) {
+            showToast("Brak creatorID", "error");
             return;
         }
 
@@ -288,8 +217,7 @@ export default function CreatorPage() {
         } finally {
             setSavingBio(false);
         }
-    }, [token, editBio, showToast, fetchMeCreator]);
-
+    }, [token, creatorID, editBio, showToast, fetchMeCreator]);
 
     if (!token) {
         return (
@@ -376,42 +304,30 @@ export default function CreatorPage() {
                                     </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
-                                    <span style={{ opacity: 0.9 }}>{songsRaw.length ? `${songsRaw.length} utw.` : "Brak utworów"}</span>
+                                    <span style={{ opacity: 0.9 }}>
+                                        {songsRaw.length ? `${songsRaw.length} utw.` : "Brak utworów"}
+                                    </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
-                                    <span style={{ opacity: 0.9 }}>{podcastsRaw.length ? `${podcastsRaw.length} pod.` : "Brak podcastów"}</span>
+                                    <span style={{ opacity: 0.9 }}>
+                                        {podcastsRaw.length ? `${podcastsRaw.length} pod.` : "Brak podcastów"}
+                                    </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
-                                    <span style={{ opacity: 0.9 }}>{albumsRaw.length ? `${albumsRaw.length} alb.` : "Brak albumów"}</span>
+                                    <span style={{ opacity: 0.9 }}>
+                                        {albumsRaw.length ? `${albumsRaw.length} alb.` : "Brak albumów"}
+                                    </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
-                                    <span style={{ opacity: 0.9 }}>{playlistsRaw.length ? `${playlistsRaw.length} pl.` : "Brak playlist"}</span>
+                                    <span style={{ opacity: 0.9 }}>
+                                        {playlistsRaw.length ? `${playlistsRaw.length} pl.` : "Brak playlist"}
+                                    </span>
                                 </div>
 
                                 <div style={styles.actions}>
-                                    <button
-                                        type="button"
-                                        onClick={openEditBio}
-                                        style={styles.ghostBtn}
-                                        title="Edytuj bio"
-                                    >
+                                    <button type="button" onClick={openEditBio} style={styles.ghostBtn} title="Edytuj bio">
                                         <Pencil size={16} style={{ display: "block" }} />
                                         Edytuj bio
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={onPlayAllSongs}
-                                        disabled={!canPlaySongs}
-                                        style={{
-                                            ...styles.primaryBtn,
-                                            opacity: canPlaySongs ? 1 : 0.6,
-                                            cursor: canPlaySongs ? "pointer" : "not-allowed",
-                                        }}
-                                        title="Odtwórz wszystkie utwory"
-                                    >
-                                        <Play size={16} style={{ display: "block" }} />
-                                        Odtwórz utwory
                                     </button>
 
                                     <button
@@ -430,69 +346,19 @@ export default function CreatorPage() {
                                     </button>
                                 </div>
 
-                                {bio ? (
-                                    <div style={styles.bio}>{bio}</div>
-                                ) : (
-                                    <div style={{ ...styles.bio, opacity: 0.65 }}>Brak opisu.</div>
-                                )}
+                                {bio ? <div style={styles.bio}>{bio}</div> : <div style={{ ...styles.bio, opacity: 0.65 }}>Brak opisu.</div>}
                             </div>
                         </div>
                     </div>
 
+                    {/* SONGS MANAGER (UPLOAD/DELETE + refetch) */}
+                    <div style={{ ...styles.card, marginTop: 14 }}>
+                        <CreatorSongsManager songs={songsRaw} onChanged={fetchMeCreator} />
+                    </div>
+
                     {/* ALBUMS */}
                     <div style={{ ...styles.card, marginTop: 14 }}>
-                        <div style={styles.sectionTitleRow}>
-                            <AlbumIcon size={16} style={{ display: "block", opacity: 0.85 }} />
-                            <div style={styles.sectionTitle}>Albumy</div>
-                            <div style={{ marginLeft: "auto", opacity: 0.65, fontSize: 12 }}>{albumsRaw.length}</div>
-                        </div>
-
-                        {albumsRaw.length === 0 ? (
-                            <div style={styles.hintInline}>Brak albumów.</div>
-                        ) : (
-                            <div style={styles.list}>
-                                {albumsRaw.map((a) => {
-                                    const cover = pickAlbumCover(a);
-                                    const name = pickAlbumName(a);
-                                    const albumID = a?.albumID ?? a?.id;
-
-                                    return (
-                                        <div
-                                            key={albumID ?? name}
-                                            style={styles.item}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => navigate(`/albums/${albumID}`)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" || e.key === " ") navigate(`/albums/${albumID}`);
-                                            }}
-                                            title={name}
-                                        >
-                                            <div style={styles.itemCover}>
-                                                {cover ? (
-                                                    <img
-                                                        src={cover}
-                                                        alt=""
-                                                        style={styles.itemCoverImg}
-                                                        referrerPolicy="no-referrer"
-                                                        crossOrigin="anonymous"
-                                                    />
-                                                ) : (
-                                                    <div style={styles.itemCoverPh} />
-                                                )}
-                                            </div>
-
-                                            <div style={{ minWidth: 0, flex: 1 }}>
-                                                <div style={styles.itemTitle}>{name}</div>
-                                                <div style={styles.itemSub}>{creatorName}</div>
-                                            </div>
-
-                                            <div style={styles.openHint}>Otwórz</div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                        <CreatorAlbumsManager albums={data?.albums || []} onChanged={fetchMeCreator} />
                     </div>
 
                     {/* PLAYLISTS */}
@@ -554,132 +420,10 @@ export default function CreatorPage() {
 
                     {/* PODCASTS */}
                     <div style={{ ...styles.card, marginTop: 14 }}>
-                        <div style={styles.sectionTitleRow}>
-                            <Mic2 size={16} style={{ display: "block", opacity: 0.85 }} />
-                            <div style={styles.sectionTitle}>Podcasty</div>
-                            <div style={{ marginLeft: "auto", opacity: 0.65, fontSize: 12 }}>{podcastsRaw.length}</div>
-                        </div>
-
-                        {podcastsRaw.length === 0 ? (
-                            <div style={styles.hintInline}>Brak podcastów.</div>
-                        ) : (
-                            <div style={styles.list}>
-                                {podcastRows.map((r) => (
-                                    <div key={r.podcastID} style={styles.row}>
-                                        <button
-                                            type="button"
-                                            onClick={() => onPlayPodcastById(r.podcastID)}
-                                            disabled={!r.playable}
-                                            style={{
-                                                ...styles.rowPlayBtn,
-                                                opacity: r.playable ? 1 : 0.45,
-                                                cursor: r.playable ? "pointer" : "not-allowed",
-                                            }}
-                                            title={r.playable ? "Odtwórz" : "Brak audio"}
-                                        >
-                                            ▶
-                                        </button>
-
-                                        <div style={styles.miniCoverWrap}>
-                                            {r.cover ? (
-                                                <img
-                                                    src={r.cover}
-                                                    alt=""
-                                                    style={styles.miniCoverImg}
-                                                    referrerPolicy="no-referrer"
-                                                    crossOrigin="anonymous"
-                                                />
-                                            ) : (
-                                                <div style={styles.miniCoverPh} />
-                                            )}
-                                        </div>
-
-                                        <div style={styles.trackMain}>
-                                            {/* klik w tytuł -> szczegóły */}
-                                            <div
-                                                style={styles.trackTitleLink}
-                                                role="button"
-                                                tabIndex={0}
-                                                title="Przejdź do szczegółów"
-                                                onClick={() => navigate(`/podcasts/${r.podcastID}`)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" || e.key === " ") navigate(`/podcasts/${r.podcastID}`);
-                                                }}
-                                            >
-                                                {r.title}
-                                            </div>
-                                            <div style={styles.trackSub}>
-                                                {creatorName} • {formatTrackDuration(r.duration)}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* SONGS */}
-                    <div style={{ ...styles.card, marginTop: 14 }}>
-                        <div style={styles.sectionTitleRow}>
-                            <Music2 size={16} style={{ display: "block", opacity: 0.85 }} />
-                            <div style={styles.sectionTitle}>Utwory</div>
-                            <div style={{ marginLeft: "auto", opacity: 0.65, fontSize: 12 }}>{songsRaw.length}</div>
-                        </div>
-
-                        {songsRaw.length === 0 ? (
-                            <div style={styles.hintInline}>Brak utworów.</div>
-                        ) : (
-                            <div style={styles.list}>
-                                {songsRows.map((r) => (
-                                    <div key={r.songID} style={styles.row}>
-                                        <button
-                                            type="button"
-                                            onClick={() => onPlaySongById(r.songID)}
-                                            disabled={!r.playable}
-                                            style={{
-                                                ...styles.rowPlayBtn,
-                                                opacity: r.playable ? 1 : 0.45,
-                                                cursor: r.playable ? "pointer" : "not-allowed",
-                                            }}
-                                            title={r.playable ? "Odtwórz" : "Brak audio"}
-                                        >
-                                            ▶
-                                        </button>
-
-                                        <div style={styles.miniCoverWrap}>
-                                            {r.cover ? (
-                                                <img
-                                                    src={r.cover}
-                                                    alt=""
-                                                    style={styles.miniCoverImg}
-                                                    referrerPolicy="no-referrer"
-                                                    crossOrigin="anonymous"
-                                                />
-                                            ) : (
-                                                <div style={styles.miniCoverPh} />
-                                            )}
-                                        </div>
-
-                                        <div style={styles.trackMain}>
-                                            {/* klik w tytuł -> szczegóły */}
-                                            <div
-                                                style={styles.trackTitleLink}
-                                                role="button"
-                                                tabIndex={0}
-                                                title="Przejdź do szczegółów"
-                                                onClick={() => navigate(`/songs/${r.songID}`)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" || e.key === " ") navigate(`/songs/${r.songID}`);
-                                                }}
-                                            >
-                                                {r.title}
-                                            </div>
-                                            <div style={styles.trackSub}>{formatTrackDuration(r.duration)}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <CreatorPodcastsManager
+                            podcasts={podcastsRaw}
+                            onChanged={fetchMeCreator}
+                        />
                     </div>
                 </>
             ) : null}
@@ -714,12 +458,7 @@ export default function CreatorPage() {
                         </div>
 
                         <div style={styles.modalFooter}>
-                            <button
-                                type="button"
-                                onClick={() => setEditOpen(false)}
-                                style={styles.ghostBtn}
-                                disabled={savingBio}
-                            >
+                            <button type="button" onClick={() => setEditOpen(false)} style={styles.ghostBtn} disabled={savingBio}>
                                 Anuluj
                             </button>
 
@@ -931,7 +670,7 @@ const styles = {
         userSelect: "none",
     },
 
-    // row (songs/podcasts)
+    // row (podcasts)
     row: {
         display: "grid",
         gridTemplateColumns: "44px 44px 1fr",

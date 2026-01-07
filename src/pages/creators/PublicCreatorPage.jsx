@@ -76,11 +76,6 @@ function pickPlaylistCover(p) {
 function pickPlaylistName(p) {
     return p?.playlistName || p?.name || "Playlista";
 }
-function pickPlaylistCount(p) {
-    const raw = p?.songsCount ?? p?.itemsCount ?? p?.tracksCount ?? p?.songs?.length ?? null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
-}
 
 export default function PublicCreatorPage() {
     const { id } = useParams(); // creatorID
@@ -432,17 +427,16 @@ export default function PublicCreatorPage() {
                         {playlists.length === 0 ? (
                             <div style={styles.hintInline}>Brak playlist.</div>
                         ) : (
-                            <div style={styles.list}>
+                            <div style={styles.grid}>
                                 {playlists.map((p) => {
                                     const cover = pickPlaylistCover(p);
                                     const name = pickPlaylistName(p);
-                                    const count = pickPlaylistCount(p);
                                     const playlistID = p?.playlistID ?? p?.id;
 
                                     return (
                                         <div
                                             key={playlistID ?? name}
-                                            style={styles.item}
+                                            style={styles.gridCard}
                                             role="button"
                                             tabIndex={0}
                                             onClick={() => navigate(`/playlists/${playlistID}`)}
@@ -464,11 +458,7 @@ export default function PublicCreatorPage() {
                                                     <div style={styles.gridCoverPh} />
                                                 )}
                                             </div>
-
-                                            <div style={{ minWidth: 0, flex: 1 }}>
-                                                <div style={styles.itemTitle}>{name}</div>
-                                                <div style={styles.itemSub}>{count != null ? `${count} utw.` : "—"}</div>
-                                            </div>
+                                            <div style={styles.gridName}>{name}</div>
                                         </div>
                                     );
                                 })}

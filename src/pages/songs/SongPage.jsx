@@ -149,44 +149,54 @@ export default function SongPage() {
                     )}
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div style={styles.headerMain}>
                     <div style={styles.kicker}>UTWÓR</div>
 
                     <h1 style={styles.h1} title={song.songName || "Utwór"}>
                         {song.songName || "Utwór"}
                     </h1>
 
-                    <div style={styles.metaLine}>
-                        <span style={{ opacity: 0.9 }}>{author}</span>
-                        <span style={{ opacity: 0.65 }}> • </span>
-                        <span style={{ opacity: 0.85 }}>{formatTrackDuration(song.duration)}</span>
+                    {/* META + ACTIONS w jednym "pasku" */}
+                    <div style={styles.metaActionsRow}>
+                        <div style={styles.metaLine}>
+                            <span style={{ opacity: 0.9 }}>{author}</span>
+                            <span style={{ opacity: 0.5 }}> • </span>
+                            <span style={{ opacity: 0.85 }}>{formatTrackDuration(song.duration)}</span>
+                        </div>
+
+                        <div style={styles.actions}>
+                            <button
+                                type="button"
+                                onClick={playNow}
+                                disabled={!playable}
+                                style={{
+                                    ...styles.primaryBtn,
+                                    opacity: playable ? 1 : 0.6,
+                                    cursor: playable ? "pointer" : "not-allowed",
+                                }}
+                                title={playable ? "Odtwórz" : "Brak pliku audio"}
+                            >
+                                <Play size={16} style={{ display: "block" }} />
+                                {isNowPlaying ? (isPlaying ? "Odtwarzasz" : "Wznów") : "Odtwórz"}
+                            </button>
+
+                            <LikeButton
+                                songID={song.songID}
+                                onToast={showToast}
+                                style={styles.likeBtn}
+                            />
+                        </div>
                     </div>
 
-                    <div style={styles.actions}>
-                        <button
-                            type="button"
-                            onClick={playNow}
-                            disabled={!playable}
-                            style={{
-                                ...styles.primaryBtn,
-                                opacity: playable ? 1 : 0.6,
-                                cursor: playable ? "pointer" : "not-allowed",
-                            }}
-                            title={playable ? "Odtwórz" : "Brak pliku audio"}
-                        >
-                            <Play size={16} style={{ display: "block" }} />
-                            {isNowPlaying ? (isPlaying ? "Odtwarzasz" : "Wznów") : "Odtwórz"}
-                        </button>
-
-                        <LikeButton
-                            songID={song.songID}
-                            onToast={showToast}
-                            style={styles.likeBtn}
-                        />
-                    </div>
+                    {/* Opis */}
+                    {song.description ? (
+                        <div style={styles.descriptionBlock}>
+                            <div style={styles.descriptionTitle}>O utworze</div>
+                            <div style={styles.descriptionText}>{song.description}</div>
+                        </div>
+                    ) : null}
                 </div>
             </div>
-
             <div style={{ height: 120 }} />
         </div>
     );
@@ -235,7 +245,17 @@ const styles = {
         cursor: "pointer",
     },
 
-    header: { display: "flex", gap: 18, alignItems: "flex-start" },
+    header: {
+        display: "flex",
+        gap: 18,
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+    },
+
+    headerMain: {
+        minWidth: 0,
+        flex: 1,
+    },
 
     coverWrap: {
         width: 200,
@@ -245,6 +265,7 @@ const styles = {
         background: "#2a2a2a",
         border: "1px solid #2a2a2a",
         flex: "0 0 auto",
+        maxWidth: "100%",
     },
 
     coverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
@@ -259,6 +280,31 @@ const styles = {
             "linear-gradient(135deg, rgba(255,200,0,0.95) 0%, rgba(255,80,180,0.95) 55%, rgba(120,70,255,0.95) 100%)",
     },
 
+    descriptionBlock: {
+        marginTop: 12,
+        padding: "14px 16px",
+        borderRadius: 14,
+        background: "#1b1b1b",
+        border: "1px solid #2a2a2a",
+        maxWidth: 820,
+    },
+
+    descriptionTitle: {
+        fontSize: 13,
+        fontWeight: 900,
+        opacity: 0.75,
+        letterSpacing: 0.6,
+        marginBottom: 8,
+        textTransform: "uppercase",
+    },
+
+    descriptionText: {
+        fontSize: 14,
+        lineHeight: 1.6,
+        opacity: 0.9,
+        whiteSpace: "pre-wrap",
+    },
+
     kicker: { fontSize: 12, opacity: 0.7, letterSpacing: 1.2, fontWeight: 900 },
     h1: {
         margin: "6px 0 8px",
@@ -269,9 +315,29 @@ const styles = {
         textOverflow: "ellipsis",
     },
 
-    metaLine: { opacity: 0.9, fontSize: 13 },
+    metaLine: {
+        opacity: 0.9,
+        fontSize: 13,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        minWidth: 0,
+    },
 
-    actions: { marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
+    metaActionsRow: {
+        marginTop: 10,
+        padding: "10px 12px",
+        borderRadius: 14,
+        background: "#161616",
+        border: "1px solid #2a2a2a",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+    },
+
+    actions: { marginTop: 0, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
 
     primaryBtn: {
         display: "inline-flex",
@@ -279,7 +345,7 @@ const styles = {
         justifyContent: "center",
         gap: 8,
         padding: "10px 12px",
-        borderRadius: 10,
+        borderRadius: 12,
         border: "none",
         background: "#1db954",
         color: "#000",

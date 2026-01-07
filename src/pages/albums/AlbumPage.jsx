@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Plus, Trash2, Play } from "lucide-react";
+import { Plus, Trash2, Play, X, Save, Image as ImageIcon, Pencil, Music2, ArrowUp, ArrowDown } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
-import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 
 import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
 import SongActionsModal from "../../components/common/SongActionsModal";
+
+import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
+
+import { apiFetch } from "../../api/http";
 
 function formatFullDate(value) {
     if (!value) return null;
@@ -24,17 +27,40 @@ function formatFullDate(value) {
     });
 }
 
+function toDateInputValue(d) {
+    if (!d) return "";
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function pickSongTitle(s) {
+    return s?.songName || s?.title || "Utwór";
+}
+function pickDuration(seconds) {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    const m = Math.floor(n / 60);
+    const s = Math.floor(n % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function AlbumPage() {
     const { id } = useParams();
-    const { token } = useAuth();
+    const { token, user } = useAuth(); // jeśli u Ciebie useAuth nie zwraca user — isOwner spadnie do false
     const { setNewQueue } = usePlayer();
-
     const { albums: libraryAlbums, toggleAlbumInLibrary } = useLibrary();
 
     const [album, setAlbum] = useState(null);
     const [songs, setSongs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
+    const [reorderMode, setReorderMode] = useState(false);
+    const [reorderBusy, setReorderBusy] = useState(false);
+    const [draftSongs, setDraftSongs] = useState([]); // lokalna lista do edycji kolejności
 
     const [savingLibrary, setSavingLibrary] = useState(false);
 
@@ -44,55 +70,38 @@ export default function AlbumPage() {
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
-    // modale
+    // modale: menu akcji utworu (playlist)
     const [addOpen, setAddOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
-    const [activeSong, setActiveSong] = useState(null); // { songID, title }
+    const [activeSong, setActiveSong] = useState(null);
     const [menuBusy] = useState(false);
 
-    useEffect(() => {
+    // owner modals
+    const [editAlbumOpen, setEditAlbumOpen] = useState(false);
+    const [manageTracksOpen, setManageTracksOpen] = useState(false);
+
+    const refresh = useCallback(async () => {
         if (!token) return;
 
-        let alive = true;
+        setLoading(true);
+        setMsg("");
 
-        const fetchAlbum = async () => {
-            const res = await fetch(`http://localhost:3000/api/albums/${id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data?.message || "Failed to fetch album");
-            return data;
-        };
+        try {
+            const a = await apiFetch(`/albums/${id}`, { token });
+            const s = await apiFetch(`/albums/${id}/songs`, { token });
 
-        const fetchSongs = async () => {
-            const res = await fetch(`http://localhost:3000/api/albums/${id}/songs`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data?.message || "Failed to fetch album songs");
-            return data.songs ?? [];
-        };
-
-        (async () => {
-            setLoading(true);
-            setMsg("");
-            try {
-                const [a, s] = await Promise.all([fetchAlbum(), fetchSongs()]);
-                if (!alive) return;
-                setAlbum(a);
-                setSongs(Array.isArray(s) ? s : []);
-            } catch (e) {
-                if (!alive) return;
-                setMsg(e?.message || "Error");
-            } finally {
-                if (alive) setLoading(false);
-            }
-        })();
-
-        return () => {
-            alive = false;
-        };
+            setAlbum(a || null);
+            setSongs(Array.isArray(s?.songs) ? s.songs : []);
+        } catch (e) {
+            setMsg(e?.message || "Błąd");
+        } finally {
+            setLoading(false);
+        }
     }, [id, token]);
+
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
 
     const isInLibrary = useMemo(() => {
         return (libraryAlbums || []).some((a) => String(a.albumID) === String(id));
@@ -147,6 +156,69 @@ export default function AlbumPage() {
         setNewQueue(queueItems, 0);
     }, [queueItems, setNewQueue]);
 
+    const beginReorder = useCallback(() => {
+        setDraftSongs(Array.isArray(sortedSongs) ? sortedSongs.slice() : []);
+        setReorderMode(true);
+    }, [sortedSongs]);
+
+    const cancelReorder = useCallback(() => {
+        if (reorderBusy) return;
+        setReorderMode(false);
+        setDraftSongs([]);
+    }, [reorderBusy]);
+
+    const moveDraft = useCallback((fromIdx, toIdx) => {
+        setDraftSongs((prev) => {
+            const arr = prev.slice();
+            if (fromIdx < 0 || toIdx < 0 || fromIdx >= arr.length || toIdx >= arr.length) return prev;
+            const [item] = arr.splice(fromIdx, 1);
+            arr.splice(toIdx, 0, item);
+            return arr;
+        });
+    }, []);
+
+    const saveReorder = useCallback(async () => {
+        if (!token) return;
+        if (!id) return;
+
+        const order = (draftSongs || [])
+            .map((s) => s?.songID)
+            .filter((x) => x != null);
+
+        if (!order.length) {
+            showToast("Brak utworów do zapisania", "error");
+            return;
+        }
+
+        setReorderBusy(true);
+        try {
+            const res = await fetch(`http://localhost:3000/api/albums/${id}/songs/reorder`, {
+                method: "PATCH",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ order }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.message || "Nie udało się zapisać kolejności");
+
+            showToast("Kolejność zapisania", "success");
+
+            setSongs(draftSongs.map((s, i) => ({ ...s, trackNumber: i + 1 })));
+
+            setReorderMode(false);
+            setDraftSongs([]);
+        } catch (e) {
+            showToast(e?.message || "Błąd zapisu kolejności", "error");
+        } finally {
+            setReorderBusy(false);
+        }
+    }, [token, id, draftSongs, showToast]);
+
+    const shownSongs = reorderMode ? draftSongs : sortedSongs;
+
     const toggleLibrary = useCallback(async () => {
         if (!token) return;
         if (!toggleAlbumInLibrary) {
@@ -169,10 +241,256 @@ export default function AlbumPage() {
         }
     }, [token, toggleAlbumInLibrary, id, isInLibrary, showToast]);
 
+    const deleteCover = useCallback(async () => {
+        if (!token) return;
+        if (!id) return;
+
+        const ok = window.confirm("Usunąć okładkę albumu? (plik zostanie usunięty z S3)");
+        if (!ok) return;
+
+        try {
+            await fetch(`http://localhost:3000/api/albums/${id}/cover`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+            }).then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data?.message || "Nie udało się usunąć okładki");
+                return data;
+            });
+
+            showToast("Okładka usunięta", "success");
+
+            setAlbum((prev) => (prev ? { ...prev, coverURL: null, signedCover: null } : prev));
+        } catch (e) {
+            showToast(e?.message || "Nie udało się usunąć okładki", "error");
+        }
+    }, [token, id, showToast]);
+
     const openSongMenu = useCallback((songID, title) => {
         setActiveSong({ songID, title });
         setMenuOpen(true);
     }, []);
+
+    const isOwner = useMemo(() => {
+        const albumCreatorUserID = album?.creator?.userID ?? album?.creator?.user?.userID ?? null;
+        const myUserID = user?.userID ?? user?.id ?? null;
+
+        if (albumCreatorUserID != null && myUserID != null) {
+            return String(albumCreatorUserID) === String(myUserID);
+        }
+
+        if (album?.isOwner === true) return true;
+
+        return false;
+    }, [album, user]);
+
+    // OWNER: Edit Album Modal
+    const [editBusy, setEditBusy] = useState(false);
+    const [editName, setEditName] = useState("");
+    const [editDescription, setEditDescription] = useState("");
+    const [editReleaseDate, setEditReleaseDate] = useState("");
+    const [editCoverFile, setEditCoverFile] = useState(null);
+    const editCoverRef = useRef(null);
+
+    const editCoverPreview = useMemo(() => {
+        if (!editCoverFile) return null;
+        return URL.createObjectURL(editCoverFile);
+    }, [editCoverFile]);
+
+    useEffect(() => {
+        return () => {
+            if (editCoverPreview) URL.revokeObjectURL(editCoverPreview);
+        };
+    }, [editCoverPreview]);
+
+    const openEditAlbum = useCallback(() => {
+        setEditName(String(album?.albumName || ""));
+        setEditDescription(String(album?.description || ""));
+        setEditReleaseDate(toDateInputValue(album?.releaseDate));
+        setEditCoverFile(null);
+        if (editCoverRef.current) editCoverRef.current.value = "";
+        setEditAlbumOpen(true);
+    }, [album]);
+
+    const closeEditAlbum = useCallback(() => {
+        if (editBusy) return;
+        setEditAlbumOpen(false);
+    }, [editBusy]);
+
+    const saveAlbumEdit = useCallback(async () => {
+        if (!token) return;
+
+        const nameTrim = String(editName || "").trim();
+        if (!nameTrim) {
+            showToast("Nazwa albumu nie może być pusta", "error");
+            return;
+        }
+
+        setEditBusy(true);
+        try {
+            // PATCH meta
+            await apiFetch(`/albums/${id}`, {
+                token,
+                method: "PATCH",
+                body: {
+                    albumName: nameTrim,
+                    description: String(editDescription || "").trim() || null,
+                    releaseDate: editReleaseDate || null,
+                },
+            });
+
+            // cover upload (opcjonalnie)
+            if (editCoverFile) {
+                const fd = new FormData();
+                fd.append("cover", editCoverFile);
+
+                await apiFetch(`/albums/${id}/cover`, {
+                    token,
+                    method: "POST",
+                    body: fd,
+                });
+            }
+
+            showToast("Zapisano album", "success");
+            setEditAlbumOpen(false);
+            await refresh();
+        } catch (e) {
+            showToast(e?.message || "Nie udało się zapisać", "error");
+        } finally {
+            setEditBusy(false);
+        }
+    }, [token, id, editName, editDescription, editReleaseDate, editCoverFile, showToast, refresh]);
+
+    const deleteAlbum = useCallback(async () => {
+        if (!token) return;
+
+        const ok = window.confirm("Na pewno usunąć ten album? Tej operacji nie da się cofnąć.");
+        if (!ok) return;
+
+        try {
+            await apiFetch(`/albums/${id}`, { token, method: "DELETE" });
+            showToast("Album usunięty", "success");
+            // możesz tu zrobić navigate(-1) jeśli chcesz, ale nie mam importu navigate w tym pliku
+        } catch (e) {
+            showToast(e?.message || "Nie udało się usunąć albumu", "error");
+        }
+    }, [token, id, showToast]);
+
+    // ========= OWNER: Manage Tracks Modal =========
+    const [tracksBusy, setTracksBusy] = useState(false);
+
+    // wolne utwory do przypięcia
+    const [availableSongs, setAvailableSongs] = useState([]);
+    const [availableLoading, setAvailableLoading] = useState(false);
+    const [pick, setPick] = useState(new Set()); // songID strings
+    const [search, setSearch] = useState("");
+
+    const openManageTracks = useCallback(async () => {
+        setManageTracksOpen(true);
+    }, []);
+
+    const closeManageTracks = useCallback(() => {
+        if (tracksBusy) return;
+        setManageTracksOpen(false);
+    }, [tracksBusy]);
+
+    const loadAvailableSongs = useCallback(async () => {
+        if (!token) return;
+        setAvailableLoading(true);
+        try {
+            const res = await apiFetch(`/songs/my?unassigned=1`, { token });
+            setAvailableSongs(Array.isArray(res?.songs) ? res.songs : []);
+        } catch (e) {
+            console.warn("LOAD AVAILABLE SONGS ERROR:", e);
+            setAvailableSongs([]);
+        } finally {
+            setAvailableLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => {
+        if (!manageTracksOpen) return;
+        setPick(new Set());
+        setSearch("");
+        loadAvailableSongs();
+    }, [manageTracksOpen, loadAvailableSongs]);
+
+    const filteredAvailable = useMemo(() => {
+        const q = String(search || "").trim().toLowerCase();
+        const arr = Array.isArray(availableSongs) ? availableSongs : [];
+        if (!q) return arr;
+
+        return arr.filter((s) => {
+            const name = String(pickSongTitle(s) || "").toLowerCase();
+            return name.includes(q);
+        });
+    }, [availableSongs, search]);
+
+    const togglePick = useCallback((songID) => {
+        const idStr = String(songID);
+        setPick((prev) => {
+            const next = new Set(prev);
+            if (next.has(idStr)) next.delete(idStr);
+            else next.add(idStr);
+            return next;
+        });
+    }, []);
+
+    const addPickedToAlbum = useCallback(async () => {
+        if (!token) return;
+        if (!pick.size) {
+            showToast("Zaznacz utwory do dodania", "error");
+            return;
+        }
+
+        setTracksBusy(true);
+        try {
+            const songIDs = Array.from(pick).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0);
+
+            await apiFetch(`/albums/${id}/songs`, {
+                token,
+                method: "POST",
+                body: { songIDs },
+            });
+
+            showToast("Dodano utwory do albumu", "success");
+            setPick(new Set());
+
+            // odśwież oba listy
+            await refresh();
+            await loadAvailableSongs();
+        } catch (e) {
+            showToast(e?.message || "Nie udało się dodać utworów", "error");
+        } finally {
+            setTracksBusy(false);
+        }
+    }, [token, id, pick, showToast, refresh, loadAvailableSongs]);
+
+    const removeFromAlbum = useCallback(
+        async (songID) => {
+            if (!token) return;
+
+            const ok = window.confirm("Usunąć ten utwór z albumu? (utwór nadal zostanie w Twoich utworach)");
+            if (!ok) return;
+
+            setTracksBusy(true);
+            try {
+                await apiFetch(`/albums/${id}/songs/${songID}`, {
+                    token,
+                    method: "DELETE",
+                });
+
+                showToast("Usunięto z albumu", "success");
+                await refresh();
+                await loadAvailableSongs();
+            } catch (e) {
+                showToast(e?.message || "Nie udało się usunąć z albumu", "error");
+            } finally {
+                setTracksBusy(false);
+            }
+        },
+        [token, id, showToast, refresh, loadAvailableSongs]
+    );
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
@@ -192,7 +510,7 @@ export default function AlbumPage() {
                 </div>
             ) : null}
 
-            {/* MODAL: SONG MENU (tylko Dodaj do playlisty) */}
+            {/* MODAL: SONG MENU (playlist) */}
             <SongActionsModal
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
@@ -218,12 +536,24 @@ export default function AlbumPage() {
             {/* HEADER */}
             <div style={styles.header}>
                 <div style={styles.coverWrap}>
-                    {albumCover ? <img src={albumCover} alt="cover" style={styles.coverImg} /> : null}
+                    {albumCover ? <img src={albumCover} alt="cover" style={styles.coverImg} /> : (
+                        <div style={styles.coverFallback}>
+                            <Music2 size={42} style={{ opacity: 0.9 }} />
+                        </div>
+                    )}
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={styles.kicker}>ALBUM</div>
-                    <h2 style={styles.h2}>{album?.albumName || "Album"}</h2>
+                    <h2 style={styles.h2} title={album?.albumName || "Album"}>
+                        {album?.albumName || "Album"}
+                    </h2>
+
+                    {album?.description ? (
+                        <div style={styles.desc}>
+                            {album.description}
+                        </div>
+                    ) : null}
 
                     <div style={styles.metaLine}>
                         {albumArtist ? <span>{albumArtist}</span> : <span style={{ opacity: 0.65 }}>—</span>}
@@ -278,13 +608,91 @@ export default function AlbumPage() {
                                 </>
                             )}
                         </button>
+
+                        {/* OWNER PANEL */}
+                        {isOwner ? (
+                            <>
+                                <button type="button" onClick={openEditAlbum} style={styles.ownerBtn} title="Edytuj album">
+                                    <Pencil size={16} style={{ display: "block" }} /> Edytuj
+                                </button>
+
+                                <button type="button" onClick={openManageTracks} style={styles.ownerBtn} title="Zarządzaj utworami">
+                                    <Music2 size={16} style={{ display: "block" }} /> Utwory
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={deleteAlbum}
+                                    style={styles.dangerBtn}
+                                    title="Usuń album"
+                                >
+                                    <Trash2 size={16} style={{ display: "block" }} /> Usuń
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={deleteCover}
+                                    disabled={!albumCover}
+                                    style={{
+                                        ...styles.ghostBtn,
+                                        opacity: albumCover ? 1 : 0.55,
+                                        cursor: albumCover ? "pointer" : "not-allowed",
+                                    }}
+                                    title={albumCover ? "Usuń okładkę" : "Album nie ma okładki"}
+                                >
+                                    <Trash2 size={16} style={{ display: "block" }} /> Usuń okładkę
+                                </button>
+
+                                {/* REORDER MODE - tylko raz */}
+                                {!reorderMode ? (
+                                    <button
+                                        type="button"
+                                        onClick={beginReorder}
+                                        style={styles.ghostBtn}
+                                        title="Zmień kolejność utworów"
+                                    >
+                                        Zmień kolejność
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={cancelReorder}
+                                            disabled={reorderBusy}
+                                            style={{
+                                                ...styles.ghostBtn,
+                                                opacity: reorderBusy ? 0.6 : 1,
+                                                cursor: reorderBusy ? "not-allowed" : "pointer",
+                                            }}
+                                            title="Anuluj"
+                                        >
+                                            <X size={16} style={{ display: "block" }} /> Anuluj
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={saveReorder}
+                                            disabled={reorderBusy}
+                                            style={{
+                                                ...styles.primaryBtn,
+                                                opacity: reorderBusy ? 0.6 : 1,
+                                                cursor: reorderBusy ? "not-allowed" : "pointer",
+                                            }}
+                                            title="Zapisz kolejność"
+                                        >
+                                            <Save size={16} style={{ display: "block" }} /> {reorderBusy ? "Zapisywanie…" : "Zapisz kolejność"}
+                                        </button>
+                                    </>
+                                )}
+                            </>
+                        ) : null}
                     </div>
                 </div>
             </div>
 
             {/* TRACKLIST */}
             <div style={styles.list}>
-                {sortedSongs.map((s, idx) => {
+                {shownSongs.map((s, idx) => {
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
                     const playable = queueIdx != null;
 
@@ -293,18 +701,18 @@ export default function AlbumPage() {
                             <button
                                 type="button"
                                 onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
-                                disabled={!playable}
+                                disabled={!playable || reorderMode}
                                 style={{
                                     ...styles.rowPlayBtn,
-                                    opacity: playable ? 1 : 0.45,
-                                    cursor: playable ? "pointer" : "not-allowed",
+                                    opacity: playable && !reorderMode ? 1 : 0.45,
+                                    cursor: playable && !reorderMode ? "pointer" : "not-allowed",
                                 }}
                                 title="Odtwórz od tego"
                             >
                                 ▶
                             </button>
 
-                            <div style={styles.trackNo}>{s.trackNumber ?? idx + 1}.</div>
+                            <div style={styles.trackNo}>{(reorderMode ? idx + 1 : s.trackNumber ?? idx + 1)}.</div>
 
                             <div style={styles.trackMain}>
                                 <div style={styles.trackTitle} title={s.songName || "Utwór"}>
@@ -315,12 +723,50 @@ export default function AlbumPage() {
                                 </div>
                             </div>
 
-                            <LikeButton songID={s.songID} onToast={showToast} />
+                            {/* REORDER BUTTONS */}
+                            {reorderMode ? (
+                                <div style={styles.reorderBtns}>
+                                    <button
+                                        type="button"
+                                        onClick={() => moveDraft(idx, idx - 1)}
+                                        disabled={reorderBusy || idx === 0}
+                                        style={{
+                                            ...styles.reorderBtn,
+                                            opacity: idx === 0 ? 0.4 : 1,
+                                            cursor: idx === 0 ? "not-allowed" : "pointer",
+                                        }}
+                                        title="W górę"
+                                    >
+                                        <ArrowUp size={16} style={{ display: "block" }} />
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => moveDraft(idx, idx + 1)}
+                                        disabled={reorderBusy || idx === shownSongs.length - 1}
+                                        style={{
+                                            ...styles.reorderBtn,
+                                            opacity: idx === shownSongs.length - 1 ? 0.4 : 1,
+                                            cursor: idx === shownSongs.length - 1 ? "not-allowed" : "pointer",
+                                        }}
+                                        title="W dół"
+                                    >
+                                        <ArrowDown size={16} style={{ display: "block" }} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <LikeButton songID={s.songID} onToast={showToast} />
+                            )}
 
                             <button
                                 type="button"
                                 onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
-                                style={styles.moreBtn}
+                                style={{
+                                    ...styles.moreBtn,
+                                    opacity: reorderMode ? 0.45 : 1,
+                                    cursor: reorderMode ? "not-allowed" : "pointer",
+                                }}
+                                disabled={reorderMode}
                                 title="Opcje"
                             >
                                 ⋯
@@ -331,6 +777,236 @@ export default function AlbumPage() {
                     );
                 })}
             </div>
+
+            {/* EDIT ALBUM MODAL */}
+            {editAlbumOpen ? (
+                <div style={styles.modalOverlay} role="dialog" aria-modal="true">
+                    <div style={styles.modal}>
+                        <div style={styles.modalHeader}>
+                            <div style={{ fontWeight: 900 }}>Edytuj album</div>
+                            <button type="button" onClick={closeEditAlbum} style={styles.iconX} title="Zamknij" disabled={editBusy}>
+                                <X size={18} style={{ display: "block" }} />
+                            </button>
+                        </div>
+
+                        <div style={styles.modalBody}>
+                            <div style={styles.field}>
+                                <div style={styles.label}>Nazwa</div>
+                                <input
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    disabled={editBusy}
+                                    style={styles.textInput}
+                                    placeholder="Nazwa albumu…"
+                                />
+                            </div>
+
+                            <div style={styles.field}>
+                                <div style={styles.label}>Okładka (opcjonalnie)</div>
+                                <div style={styles.coverPickRow}>
+                                    <div style={styles.coverPreview}>
+                                        {editCoverPreview ? (
+                                            <img src={editCoverPreview} alt="" style={styles.coverPreviewImg} />
+                                        ) : albumCover ? (
+                                            <img src={albumCover} alt="" style={styles.coverPreviewImg} />
+                                        ) : (
+                                            <div style={styles.coverPreviewPh}>
+                                                <ImageIcon size={18} style={{ opacity: 0.75 }} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ flex: 1 }}>
+                                        <input
+                                            ref={editCoverRef}
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/jpg"
+                                            onChange={(e) => setEditCoverFile(e.target.files?.[0] || null)}
+                                            disabled={editBusy}
+                                            style={styles.fileInput}
+                                        />
+                                        {editCoverFile ? (
+                                            <div style={styles.smallHint} title={editCoverFile.name}>
+                                                Wybrano: <b>{editCoverFile.name}</b>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={styles.field}>
+                                <div style={styles.label}>Data publikacji (opcjonalnie)</div>
+                                <input
+                                    type="date"
+                                    value={editReleaseDate}
+                                    onChange={(e) => setEditReleaseDate(e.target.value)}
+                                    disabled={editBusy}
+                                    style={styles.textInput}
+                                />
+                                <div style={styles.smallHint}>
+                                    Jeśli data jest w przyszłości, album będzie widoczny tylko dla Ciebie (tak jak w backendzie).
+                                </div>
+                            </div>
+
+                            <div style={styles.field}>
+                                <div style={styles.label}>Opis (opcjonalnie)</div>
+                                <textarea
+                                    value={editDescription}
+                                    onChange={(e) => setEditDescription(e.target.value)}
+                                    maxLength={4000}
+                                    placeholder="Opis albumu, kontekst, historia powstania…"
+                                    style={styles.textarea}
+                                    disabled={editBusy}
+                                />
+                                <div style={styles.smallHint}>{String(editDescription || "").length}/4000</div>
+                            </div>
+                        </div>
+
+                        <div style={styles.modalFooter}>
+                            <button type="button" onClick={closeEditAlbum} style={styles.ghostBtn} disabled={editBusy}>
+                                Anuluj
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={saveAlbumEdit}
+                                disabled={editBusy}
+                                style={{
+                                    ...styles.primaryBtn,
+                                    opacity: editBusy ? 0.65 : 1,
+                                    cursor: editBusy ? "not-allowed" : "pointer",
+                                }}
+                                title="Zapisz"
+                            >
+                                <Save size={16} style={{ display: "block" }} />
+                                {editBusy ? "Zapisywanie…" : "Zapisz"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {/* MANAGE TRACKS MODAL */}
+            {manageTracksOpen ? (
+                <div style={styles.modalOverlay} role="dialog" aria-modal="true">
+                    <div style={styles.modal}>
+                        <div style={styles.modalHeader}>
+                            <div style={{ fontWeight: 900 }}>Zarządzaj utworami</div>
+                            <button type="button" onClick={closeManageTracks} style={styles.iconX} title="Zamknij" disabled={tracksBusy}>
+                                <X size={18} style={{ display: "block" }} />
+                            </button>
+                        </div>
+
+                        <div style={styles.modalBody}>
+                            {/* CURRENT TRACKS */}
+                            <div style={styles.sectionTitle}>Utwory w albumie</div>
+
+                            {!sortedSongs.length ? (
+                                <div style={styles.smallHint}>Ten album nie ma jeszcze utworów.</div>
+                            ) : (
+                                <div style={styles.tracksBox}>
+                                    {sortedSongs.map((s, idx) => {
+                                        const t = pickSongTitle(s);
+                                        const dur = pickDuration(s?.duration);
+
+                                        return (
+                                            <div key={s.songID || idx} style={styles.trackRow}>
+                                                <div style={{ minWidth: 0, flex: 1 }}>
+                                                    <div style={styles.trackRowTitle} title={t}>
+                                                        {s.trackNumber ?? idx + 1}. {t}
+                                                    </div>
+                                                    <div style={styles.trackRowSub}>{dur}</div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeFromAlbum(s.songID)}
+                                                    disabled={tracksBusy}
+                                                    style={{
+                                                        ...styles.smallDangerBtn,
+                                                        opacity: tracksBusy ? 0.6 : 1,
+                                                        cursor: tracksBusy ? "not-allowed" : "pointer",
+                                                    }}
+                                                    title="Usuń z albumu"
+                                                >
+                                                    <Trash2 size={16} style={{ display: "block" }} />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* AVAILABLE SONGS */}
+                            <div style={{ height: 8 }} />
+
+                            <div style={styles.sectionTitle}>Dodaj utwory (wolne)</div>
+
+                            <input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                disabled={tracksBusy}
+                                style={styles.textInput}
+                                placeholder="Szukaj utworu…"
+                            />
+
+                            {availableLoading ? (
+                                <div style={styles.smallHint}>Ładowanie utworów…</div>
+                            ) : filteredAvailable.length === 0 ? (
+                                <div style={styles.smallHint}>
+                                    Brak wolnych utworów do dodania (wszystkie są już w albumach lub nie masz utworów).
+                                </div>
+                            ) : (
+                                <div style={styles.pickList}>
+                                    {filteredAvailable.map((s) => {
+                                        const sid = String(s?.songID ?? s?.id ?? "");
+                                        const checked = pick.has(sid);
+
+                                        return (
+                                            <label key={sid} style={styles.pickRow}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => togglePick(sid)}
+                                                    disabled={tracksBusy}
+                                                    style={{ transform: "scale(1.05)" }}
+                                                />
+                                                <div style={{ minWidth: 0, flex: 1 }}>
+                                                    <div style={styles.pickTitle} title={pickSongTitle(s)}>
+                                                        {pickSongTitle(s)}
+                                                    </div>
+                                                    <div style={styles.pickSub}>{pickDuration(s?.duration)}</div>
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={styles.modalFooter}>
+                            <button type="button" onClick={closeManageTracks} style={styles.ghostBtn} disabled={tracksBusy}>
+                                Zamknij
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={addPickedToAlbum}
+                                disabled={tracksBusy || pick.size === 0}
+                                style={{
+                                    ...styles.primaryBtn,
+                                    opacity: tracksBusy || pick.size === 0 ? 0.6 : 1,
+                                    cursor: tracksBusy || pick.size === 0 ? "not-allowed" : "pointer",
+                                }}
+                                title="Dodaj zaznaczone"
+                            >
+                                <Plus size={16} style={{ display: "block" }} />
+                                Dodaj ({pick.size})
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -350,7 +1026,7 @@ const styles = {
         fontSize: 13,
     },
 
-    header: { display: "flex", gap: 16, alignItems: "center" },
+    header: { display: "flex", gap: 16, alignItems: "flex-start" },
 
     coverWrap: {
         width: 140,
@@ -359,14 +1035,32 @@ const styles = {
         overflow: "hidden",
         background: "#2a2a2a",
         flex: "0 0 auto",
+        border: "1px solid #2a2a2a",
     },
     coverImg: { width: "100%", height: "100%", objectFit: "cover" },
+    coverFallback: {
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#1a1a1a",
+    },
 
-    kicker: { opacity: 0.7, fontSize: 12, letterSpacing: 1 },
-    h2: { margin: "6px 0 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-    metaLine: { opacity: 0.85, fontSize: 13 },
+    kicker: { opacity: 0.7, fontSize: 12, letterSpacing: 1, fontWeight: 900 },
+    h2: { margin: "6px 0 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
-    actions: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
+    desc: {
+        marginTop: 8,
+        maxWidth: 900,
+        opacity: 0.9,
+        lineHeight: 1.55,
+        whiteSpace: "pre-wrap",
+    },
+
+    metaLine: { opacity: 0.85, fontSize: 13, marginTop: 8 },
+
+    actions: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
 
     primaryBtn: {
         display: "inline-flex",
@@ -379,6 +1073,7 @@ const styles = {
         background: "#1db954",
         color: "#000",
         fontWeight: 900,
+        cursor: "pointer",
     },
 
     ghostBtn: {
@@ -392,6 +1087,35 @@ const styles = {
         background: "transparent",
         color: "white",
         fontWeight: 800,
+        cursor: "pointer",
+    },
+
+    ownerBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #2a2a2a",
+        background: "#161616",
+        color: "white",
+        fontWeight: 900,
+        cursor: "pointer",
+    },
+
+    dangerBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #7a2a2a",
+        background: "transparent",
+        color: "#ffb4b4",
+        fontWeight: 900,
+        cursor: "pointer",
     },
 
     list: { marginTop: 18 },
@@ -416,6 +1140,7 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
+        cursor: "pointer",
     },
 
     moreBtn: {
@@ -432,6 +1157,7 @@ const styles = {
         fontWeight: 900,
         fontSize: 18,
         lineHeight: 1,
+        cursor: "pointer",
     },
 
     trackNo: { opacity: 0.7, textAlign: "right" },
@@ -441,4 +1167,189 @@ const styles = {
     trackSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
     trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right" },
+
+    // MODAL
+    modalOverlay: {
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 2000,
+    },
+
+    modal: {
+        width: "min(820px, 100%)",
+        background: "#1b1b1b",
+        border: "1px solid #2a2a2a",
+        borderRadius: 14,
+        overflow: "hidden",
+        boxShadow: "0 24px 60px rgba(0,0,0,0.55)",
+    },
+
+    modalHeader: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "12px 14px",
+        borderBottom: "1px solid #2a2a2a",
+    },
+
+    iconX: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        cursor: "pointer",
+    },
+
+    modalBody: {
+        padding: 18,
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+    },
+
+    field: { display: "flex", flexDirection: "column", gap: 8 },
+    label: { fontSize: 12, opacity: 0.7, fontWeight: 800, letterSpacing: 0.6 },
+
+    fileInput: {
+        width: "100%",
+        borderRadius: 12,
+        border: "1px solid #333",
+        background: "#141414",
+        color: "white",
+        padding: "10px 12px",
+        outline: "none",
+    },
+
+    textInput: {
+        width: "100%",
+        borderRadius: 12,
+        border: "1px solid #333",
+        background: "#141414",
+        color: "white",
+        padding: "10px 12px",
+        outline: "none",
+    },
+
+    textarea: {
+        minHeight: 140,
+        resize: "vertical",
+        borderRadius: 12,
+        border: "1px solid #333",
+        background: "#141414",
+        color: "white",
+        padding: "10px 12px",
+        outline: "none",
+        lineHeight: 1.5,
+        fontFamily: "inherit",
+    },
+
+    coverPickRow: { display: "flex", gap: 12, alignItems: "center" },
+    coverPreview: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,
+        overflow: "hidden",
+        background: "#2a2a2a",
+        border: "1px solid #2a2a2a",
+        flex: "0 0 auto",
+    },
+    coverPreviewImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+    coverPreviewPh: {
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#202020",
+    },
+
+    smallHint: { fontSize: 12, opacity: 0.75 },
+
+    modalFooter: {
+        padding: 14,
+        borderTop: "1px solid #2a2a2a",
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 10,
+    },
+
+    // Manage tracks UI
+    sectionTitle: { fontWeight: 900, fontSize: 13, opacity: 0.85, letterSpacing: 0.4 },
+    tracksBox: {
+        border: "1px solid #2a2a2a",
+        borderRadius: 12,
+        background: "#141414",
+        overflow: "hidden",
+    },
+    trackRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 12px",
+        borderBottom: "1px solid #232323",
+    },
+    trackRowTitle: { fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+    trackRowSub: { fontSize: 12, opacity: 0.7 },
+
+    smallDangerBtn: {
+        width: 40,
+        height: 36,
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        background: "transparent",
+        color: "#ffb4b4",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+
+    pickList: {
+        border: "1px solid #2a2a2a",
+        borderRadius: 12,
+        background: "#141414",
+        overflow: "hidden",
+        maxHeight: 260,
+        overflowY: "auto",
+    },
+    pickRow: {
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        padding: "10px 12px",
+        borderBottom: "1px solid #232323",
+        cursor: "pointer",
+        userSelect: "none",
+    },
+    pickTitle: { fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+    pickSub: { fontSize: 12, opacity: 0.7 },
+
+    reorderBtns: {
+        display: "flex",
+        gap: 8,
+        justifyContent: "flex-end",
+    },
+
+    reorderBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+    },
 };

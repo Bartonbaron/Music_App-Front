@@ -11,6 +11,7 @@ export async function login(userName, password) {
         if (!res.ok) return { success: false, message: data.message };
 
         return { success: true, token: data.token };
+        // eslint-disable-next-line no-unused-vars
     } catch (err) {
         return { success: false, message: "Network error" };
     }
@@ -31,6 +32,7 @@ export async function register(userName, password, email) {
         }
 
         return { success: true };
+        // eslint-disable-next-line no-unused-vars
     } catch (err) {
         return { success: false, message: "Network error" };
     }

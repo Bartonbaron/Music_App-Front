@@ -1,7 +1,5 @@
 import { apiFetch } from "./http";
 
-const BASE_URL = "http://localhost:3000/api";
-
 export async function fetchMyProfile(token) {
     return apiFetch("/users/me", { token });
 }
@@ -19,14 +17,16 @@ export async function fetchPublicUserPlaylists(token, userID) {
 }
 
 export async function updateMyProfile(token, { userName, email } = {}) {
+    const nameTrim = userName === undefined ? undefined : String(userName).trim();
+    const emailTrim = email === undefined ? undefined : String(email).trim();
+
     return apiFetch("/users/me", {
         token,
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            userName: userName?.trim() || undefined,
-            email: email?.trim() || undefined,
-        }),
+        body: {
+            userName: nameTrim || undefined,
+            email: emailTrim === "" ? null : emailTrim || undefined,
+        },
     });
 }
 
@@ -34,8 +34,7 @@ export async function changeMyPassword(token, { oldPassword, newPassword } = {})
     return apiFetch("/users/password", {
         token,
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oldPassword, newPassword }),
+        body: { oldPassword, newPassword },
     });
 }
 
@@ -43,8 +42,7 @@ export async function updatePlaybackPreferences(token, { volume, playbackMode, a
     return apiFetch("/users/preferences", {
         token,
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ volume, playbackMode, autoplay }),
+        body: { volume, playbackMode, autoplay },
     });
 }
 

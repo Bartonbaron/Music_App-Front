@@ -11,8 +11,33 @@ import { useAuth } from "./AuthContext";
 
 const LibraryContext = createContext(null);
 
+function pickRoleName(user) {
+    return user?.role?.roleName || user?.roleName || user?.role || "";
+}
+
+function normalizeAlbum(a) {
+    return {
+        albumID: a?.albumID ?? a?.id ?? null,
+        albumName: a?.albumName ?? a?.name ?? "Album",
+        signedCover: a?.signedCover || a?.albumSignedCover || a?.coverSigned || null,
+        createdAt: a?.createdAt || null,
+        _source: a?._source || "unknown",
+    };
+}
+
+function mergeAlbumsUnique(primary = [], extra = []) {
+    const map = new Map();
+    [...primary, ...extra].forEach((x) => {
+        const n = normalizeAlbum(x);
+        if (!n.albumID) return;
+        map.set(String(n.albumID), n);
+    });
+    return Array.from(map.values());
+}
+
 export function LibraryProvider({ children }) {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
+    const isCreatorRole = pickRoleName(user) === "Creator";
 
     const [albums, setAlbums] = useState([]);
     const [playlists, setPlaylists] = useState([]);
@@ -51,7 +76,7 @@ export function LibraryProvider({ children }) {
         setError("");
 
         try {
-            const [likedRes, favPodsRes, albumsRes, playlistsRes] = await Promise.all([
+            const requests = [
                 fetch("http://localhost:3000/api/libraries/liked-songs", {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
@@ -68,12 +93,29 @@ export function LibraryProvider({ children }) {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
                 }),
-            ]);
+            ];
+            if (isCreatorRole) {
+                requests.push(
+                    fetch("http://localhost:3000/api/creators/me", {
+                        headers: { Authorization: `Bearer ${token}` },
+                        signal: ac.signal,
+                    })
+                );
+            }
+
+            const resArr = await Promise.all(requests);
+
+            const likedRes = resArr[0];
+            const favPodsRes = resArr[1];
+            const albumsRes = resArr[2];
+            const playlistsRes = resArr[3];
+            const myCreatorRes = isCreatorRole ? resArr[4] : null;
 
             const likedData = await likedRes.json().catch(() => ({}));
             const favPodsData = await favPodsRes.json().catch(() => ({}));
             const albumsData = await albumsRes.json().catch(() => ({}));
             const playlistsData = await playlistsRes.json().catch(() => ({}));
+            const myCreatorData = myCreatorRes ? await myCreatorRes.json().catch(() => ({})) : null;
 
             if (!likedRes.ok) {
                 throw new Error(likedData?.message || "Failed to fetch liked songs");
@@ -87,22 +129,36 @@ export function LibraryProvider({ children }) {
             if (!playlistsRes.ok) {
                 throw new Error(playlistsData?.message || "Failed to fetch library playlists");
             }
+            if (myCreatorRes && !myCreatorRes.ok) {
+                throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
+            }
 
-            // Single source of truth:
-            // - liked songs -> /libraries/liked-songs
-            // - favorite podcasts -> /libraries/favorite-podcasts
+            // --- favorites ---
             setFavoriteSongs(Array.isArray(likedData) ? likedData : likedData.songs || []);
             setFavoritePodcasts(Array.isArray(favPodsData) ? favPodsData : favPodsData.podcasts || []);
 
-            setAlbums(Array.isArray(albumsData) ? albumsData : albumsData.albums || []);
+            // --- playlists ---
             setPlaylists(Array.isArray(playlistsData) ? playlistsData : playlistsData.playlists || []);
+
+            // --- albums (merge library + creator albums) ---
+            const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData.albums || [];
+            const creatorAlbumsRaw = myCreatorData?.albums || [];
+
+            const libraryAlbums = (libraryAlbumsRaw || []).map((a) => ({ ...a, _source: "library" }));
+            const creatorAlbums = (creatorAlbumsRaw || []).map((a) => ({ ...a, _source: "creator" }));
+
+            const mergedAlbums = isCreatorRole
+                ? mergeAlbumsUnique(libraryAlbums, creatorAlbums)
+                : libraryAlbums;
+
+            setAlbums(mergedAlbums);
         } catch (e) {
             if (e?.name === "AbortError") return;
             setError(e?.message || "Library error");
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, isCreatorRole]);
 
     // -------- LIKED SONGS --------
     const toggleSongLike = useCallback(

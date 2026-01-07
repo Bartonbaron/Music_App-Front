@@ -16,7 +16,6 @@ export default function Sidebar() {
         return (albums || []).map((a) => ({
             key: `a-${a.albumID}`,
             title: a.albumName || "Album",
-            sub: a.creatorName || a?.creator?.user?.userName || "—",
             cover: a.signedCover || null,
             href: `/albums/${a.albumID}`,
             isActive: location.pathname === `/albums/${a.albumID}`,

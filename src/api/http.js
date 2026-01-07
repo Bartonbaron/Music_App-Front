@@ -1,24 +1,39 @@
 const BASE_URL = "http://localhost:3000/api";
 
 export async function apiFetch(path, { token, method = "GET", body } = {}) {
-    const url = `${BASE_URL}${path}`;
+    const isFormData =
+        typeof FormData !== "undefined" && body instanceof FormData;
 
     const headers = {};
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const isFormData = body instanceof FormData;
-
-    if (!isFormData && body !== undefined) {
-        headers["Content-Type"] = "application/json";
+    let finalBody = body;
+    if (body != null && !isFormData) {
+        if (typeof body === "object") {
+            headers["Content-Type"] = "application/json";
+            finalBody = JSON.stringify(body);
+        } else {
+            finalBody = body;
+        }
     }
 
-    const res = await fetch(url, {
+    const res = await fetch(`${BASE_URL}${path}`, {
         method,
         headers,
-        body: body === undefined ? undefined : (isFormData ? body : JSON.stringify(body)),
+        body: method === "GET" ? undefined : finalBody,
     });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Request failed");
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = { message: text };
+    }
+
+    if (!res.ok) {
+        throw new Error(data?.message || "Request failed");
+    }
+
     return data;
 }

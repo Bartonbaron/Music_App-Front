@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, Trash2, Play } from "lucide-react";
+import { Plus, Trash2, Play, Flag, Music } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -11,6 +11,7 @@ import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
 import SongActionsModal from "../../components/common/SongActionsModal";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
+import { apiFetch } from "../../api/http";
 
 function formatFullDate(value) {
     if (!value) return null;
@@ -24,8 +25,21 @@ function formatFullDate(value) {
     });
 }
 
+function formatDateTime(value) {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+
+    return d.toLocaleString("pl-PL", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
 function pickSongCover(song) {
-    // preferuj album cover jeśli jest
     return (
         song?.album?.signedCover ||
         song?.album?.coverURL ||
@@ -50,26 +64,50 @@ export default function PlaylistPage() {
     const [savingLibrary, setSavingLibrary] = useState(false);
     const [toast, setToast] = useState(null);
 
-    // modale
+    // modale / menu
     const [addOpen, setAddOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [activeSong, setActiveSong] = useState(null); // { songID, title }
-
     const [menuBusy, setMenuBusy] = useState(false);
+
+    // report playlist
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportReason, setReportReason] = useState("");
+    const [reportBusy, setReportBusy] = useState(false);
+
+    // collaborative
+    const [inviteOpen, setInviteOpen] = useState(false);
+    const [collabBusy, setCollabBusy] = useState(false);
+    const [collabUiBusy, setCollabUiBusy] = useState(false);
+    const [collabList, setCollabList] = useState([]);
+    const [myCollabStatus, setMyCollabStatus] = useState("NONE"); // NONE | INVITED | ACCEPTED | OWNER
+    const [inviteName, setInviteName] = useState("");
+
+    // cover + visibility
+    const coverInputRef = useRef(null);
+    const [coverBusy, setCoverBusy] = useState(false);
+    const [visBusy, setVisBusy] = useState(false);
+
+    // reorder
+    const [reorderMode, setReorderMode] = useState(false);
+    const [orderDraft, setOrderDraft] = useState([]); // songIDs
+    const [reorderBusy, setReorderBusy] = useState(false);
 
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
+    const fetchPlaylistOnly = useCallback(async () => {
+        if (!token) return null;
+        const data = await apiFetch(`/playlists/${id}`, { token });
+        return data;
+    }, [id, token]);
+
     const fetchSongsOnly = useCallback(async () => {
-        if (!token) return;
-        const res = await fetch(`http://localhost:3000/api/playlists/${id}/songs`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || "Failed to fetch playlist songs");
-        setItems(Array.isArray(data) ? data : []);
+        if (!token) return [];
+        const data = await apiFetch(`/playlists/${id}/songs`, { token });
+        return Array.isArray(data) ? data : [];
     }, [id, token]);
 
     useEffect(() => {
@@ -77,29 +115,11 @@ export default function PlaylistPage() {
 
         let alive = true;
 
-        const fetchPlaylist = async () => {
-            const res = await fetch(`http://localhost:3000/api/playlists/${id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data?.message || "Failed to fetch playlist");
-            return data;
-        };
-
-        const fetchSongs = async () => {
-            const res = await fetch(`http://localhost:3000/api/playlists/${id}/songs`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data?.message || "Failed to fetch playlist songs");
-            return Array.isArray(data) ? data : [];
-        };
-
         (async () => {
             setLoading(true);
             setMsg("");
             try {
-                const [p, s] = await Promise.all([fetchPlaylist(), fetchSongs()]);
+                const [p, s] = await Promise.all([fetchPlaylistOnly(), fetchSongsOnly()]);
                 if (!alive) return;
                 setPlaylist(p);
                 setItems(Array.isArray(s) ? s : []);
@@ -114,7 +134,7 @@ export default function PlaylistPage() {
         return () => {
             alive = false;
         };
-    }, [id, token]);
+    }, [token, fetchPlaylistOnly, fetchSongsOnly]);
 
     const meId = useMemo(() => String(user?.userID ?? user?.id ?? ""), [user]);
     const playlistOwnerId = useMemo(() => String(playlist?.userID ?? ""), [playlist]);
@@ -124,10 +144,41 @@ export default function PlaylistPage() {
         return meId === playlistOwnerId;
     }, [meId, playlistOwnerId]);
 
+    // fetch collab status/list
+    useEffect(() => {
+        if (!token || !playlist?.playlistID) return;
+
+        let alive = true;
+
+        (async () => {
+            try {
+                const me = await apiFetch(`/playlists/${playlist.playlistID}/collaborators/me`, { token });
+                if (!alive) return;
+                setMyCollabStatus(me?.status || "NONE");
+
+                if (isOwner) {
+                    const list = await apiFetch(`/playlists/${playlist.playlistID}/collaborators`, { token });
+                    if (!alive) return;
+                    setCollabList(Array.isArray(list) ? list : []);
+                } else {
+                    setCollabList([]);
+                }
+            } catch {
+                // cisza – jeśli endpointy nie istnieją / błąd, po prostu nie pokazujemy funkcji
+                if (!alive) return;
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, [token, playlist?.playlistID, isOwner]);
+
     const canEdit = useMemo(() => {
         if (!playlist) return false;
-        return isOwner || Boolean(playlist?.isCollaborative);
-    }, [playlist, isOwner]);
+        if (isOwner) return true;
+        return myCollabStatus === "ACCEPTED";
+    }, [playlist, isOwner, myCollabStatus]);
 
     const isInLibrary = useMemo(() => {
         return (libraryPlaylists || []).some((p) => String(p.playlistID) === String(id));
@@ -140,6 +191,18 @@ export default function PlaylistPage() {
     const sortedItems = useMemo(() => {
         return (items || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     }, [items]);
+
+    // map songID -> row (do reorder)
+    const rowBySongId = useMemo(() => {
+        const m = new Map();
+        sortedItems.forEach((r) => m.set(String(r.songID), r));
+        return m;
+    }, [sortedItems]);
+
+    const displayRows = useMemo(() => {
+        if (!reorderMode) return sortedItems;
+        return orderDraft.map((sid) => rowBySongId.get(String(sid))).filter(Boolean);
+    }, [reorderMode, orderDraft, rowBySongId, sortedItems]);
 
     const queueItems = useMemo(() => {
         return sortedItems
@@ -188,36 +251,24 @@ export default function PlaylistPage() {
     const toggleLibraryOrDeletePlaylist = useCallback(async () => {
         if (!token) return;
 
-        // owner -> usuń całą playlistę
         if (isOwner) {
             const ok = window.confirm("Na pewno usunąć playlistę? Tej operacji nie da się cofnąć.");
             if (!ok) return;
 
             setSavingLibrary(true);
             try {
-                const res = await fetch(`http://localhost:3000/api/playlists/${id}`, {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    showToast(data?.message || "Nie udało się usunąć playlisty", "error");
-                    return;
-                }
-
+                await apiFetch(`/playlists/${id}`, { token, method: "DELETE" });
                 showToast("Usunięto playlistę", "success");
                 await refetch?.();
                 navigate("/", { replace: true });
             } catch (e) {
-                showToast(e?.message || "Błąd usuwania", "error");
+                showToast(e?.message || "Nie udało się usunąć playlisty", "error");
             } finally {
                 setSavingLibrary(false);
             }
             return;
         }
 
-        // nie owner -> dodaj/usuń z biblioteki
         if (!togglePlaylistInLibrary) {
             showToast("Brak togglePlaylistInLibrary w LibraryContext", "error");
             return;
@@ -244,6 +295,10 @@ export default function PlaylistPage() {
     }, []);
 
     const removeFromThisPlaylist = useCallback(async () => {
+        if (!canEdit) {
+            showToast("Nie masz uprawnień do edycji tej playlisty", "error");
+            return;
+        }
         if (!token || !activeSong?.songID) return;
 
         const ok = window.confirm("Usunąć ten utwór z tej playlisty?");
@@ -251,32 +306,272 @@ export default function PlaylistPage() {
 
         setMenuBusy(true);
         try {
-            const res = await fetch(
-                `http://localhost:3000/api/playlists/${id}/songs/${activeSong.songID}`,
-                {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                showToast(data?.message || "Nie udało się usunąć utworu", "error");
-                return;
-            }
-
+            await apiFetch(`/playlists/${id}/songs/${activeSong.songID}`, { token, method: "DELETE" });
             showToast("Usunięto z playlisty", "success");
             setMenuOpen(false);
-
-            // odśwież tracklistę (bez przeładowywania całej strony)
-            await fetchSongsOnly();
+            const s = await fetchSongsOnly();
+            setItems(s);
         } catch (e) {
-            showToast(e?.message || "Błąd sieci", "error");
+            showToast(e?.message || "Nie udało się usunąć utworu", "error");
         } finally {
             setMenuBusy(false);
         }
-    }, [token, activeSong, id, showToast, fetchSongsOnly]);
+    }, [canEdit, token, activeSong, id, showToast, fetchSongsOnly]);
 
+    const submitReport = useCallback(async () => {
+        if (!token || !playlist?.playlistID) return;
+
+        const reason = reportReason.trim();
+        if (reason.length < 3) {
+            showToast("Podaj powód (min. 3 znaki)", "error");
+            return;
+        }
+
+        setReportBusy(true);
+        try {
+            await apiFetch("/reports", {
+                token,
+                method: "POST",
+                body: { contentType: "playlist", contentID: Number(playlist.playlistID), reason },
+            });
+
+            showToast("Zgłoszenie wysłane", "success");
+            setReportOpen(false);
+            setReportReason("");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wysłać zgłoszenia", "error");
+        } finally {
+            setReportBusy(false);
+        }
+    }, [token, playlist?.playlistID, reportReason, showToast]);
+
+    // ====== COLLAB MODAL handlers ======
+    const isCollabOn = Boolean(playlist?.isCollaborative);
+
+    const toggleCollaborativeMode = useCallback(async () => {
+        if (!token || !playlist?.playlistID || !isOwner) return;
+
+        const nextVal = !playlist.isCollaborative;
+
+        setCollabBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/collaborative`, {
+                token,
+                method: "PATCH",
+                body: { isCollaborative: nextVal },
+            });
+
+            setPlaylist((prev) => (prev ? { ...prev, isCollaborative: nextVal } : prev));
+            showToast(nextVal ? "Współtworzenie włączone" : "Współtworzenie wyłączone", "success");
+
+            // odśwież status/listy
+            try {
+                const me = await apiFetch(`/playlists/${playlist.playlistID}/collaborators/me`, { token });
+                setMyCollabStatus(me?.status || "NONE");
+                const list = await apiFetch(`/playlists/${playlist.playlistID}/collaborators`, { token });
+                setCollabList(Array.isArray(list) ? list : []);
+            } catch { /* */ }
+        } catch (e) {
+            showToast(e?.message || "Nie udało się zmienić trybu", "error");
+        } finally {
+            setCollabBusy(false);
+        }
+    }, [token, playlist?.playlistID, playlist?.isCollaborative, isOwner, showToast]);
+
+    const sendInvite = useCallback(async () => {
+        if (!token || !playlist?.playlistID) return;
+        const name = inviteName.trim();
+        if (name.length < 2) {
+            showToast("Podaj nazwę użytkownika", "error");
+            return;
+        }
+
+        setCollabUiBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/collaborators/invite`, {
+                token,
+                method: "POST",
+                body: { userName: name },
+            });
+
+            showToast("Zaproszenie wysłane", "success");
+            setInviteName("");
+
+            const list = await apiFetch(`/playlists/${playlist.playlistID}/collaborators`, { token });
+            setCollabList(Array.isArray(list) ? list : []);
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wysłać zaproszenia", "error");
+        } finally {
+            setCollabUiBusy(false);
+        }
+    }, [token, playlist?.playlistID, inviteName, showToast]);
+
+    const respondInvite = useCallback(async (action) => {
+        if (!token || !playlist?.playlistID) return;
+
+        setCollabUiBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/collaborators/respond`, {
+                token,
+                method: "PATCH",
+                body: { action }, // ACCEPT | DECLINE
+            });
+
+            showToast(action === "ACCEPT" ? "Zaproszenie zaakceptowane" : "Zaproszenie odrzucone", "success");
+
+            const me = await apiFetch(`/playlists/${playlist.playlistID}/collaborators/me`, { token });
+            setMyCollabStatus(me?.status || "NONE");
+
+            const s = await fetchSongsOnly();
+            setItems(s);
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wykonać akcji", "error");
+        } finally {
+            setCollabUiBusy(false);
+        }
+    }, [token, playlist?.playlistID, showToast, fetchSongsOnly]);
+
+    const removeCollab = useCallback(async (userID) => {
+        if (!token || !playlist?.playlistID) return;
+
+        const ok = window.confirm("Usunąć współtwórcę?");
+        if (!ok) return;
+
+        setCollabUiBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/collaborators/${userID}`, {
+                token,
+                method: "DELETE",
+            });
+
+            showToast("Usunięto współtwórcę", "success");
+
+            const list = await apiFetch(`/playlists/${playlist.playlistID}/collaborators`, { token });
+            setCollabList(Array.isArray(list) ? list : []);
+        } catch (e) {
+            showToast(e?.message || "Nie udało się usunąć", "error");
+        } finally {
+            setCollabUiBusy(false);
+        }
+    }, [token, playlist?.playlistID, showToast]);
+
+    // ====== COVER ======
+    const uploadCover = useCallback(async (file) => {
+        if (!token || !playlist?.playlistID || !file) return;
+
+        const fd = new FormData();
+        fd.append("cover", file);
+
+        setCoverBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/cover`, {
+                token,
+                method: "POST",
+                body: fd,
+            });
+
+            const refreshed = await apiFetch(`/playlists/${playlist.playlistID}`, { token });
+            setPlaylist(refreshed);
+
+            showToast("Okładka zapisana", "success");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wgrać okładki", "error");
+        } finally {
+            setCoverBusy(false);
+        }
+    }, [token, playlist?.playlistID, showToast]);
+
+    const deleteCover = useCallback(async () => {
+        if (!token || !playlist?.playlistID) return;
+        const ok = window.confirm("Usunąć okładkę playlisty?");
+        if (!ok) return;
+
+        setCoverBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/cover`, { token, method: "DELETE" });
+
+            const refreshed = await apiFetch(`/playlists/${playlist.playlistID}`, { token });
+            setPlaylist(refreshed);
+
+            showToast("Usunięto okładkę", "success");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się usunąć okładki", "error");
+        } finally {
+            setCoverBusy(false);
+        }
+    }, [token, playlist?.playlistID, showToast]);
+
+    // ====== VISIBILITY ======
+    const setVisibility = useCallback(async (next) => {
+        if (!token || !playlist?.playlistID || !isOwner) return;
+
+        setVisBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/visibility`, {
+                token,
+                method: "PATCH",
+                body: { visibility: next },
+            });
+
+            setPlaylist((p) => (p ? { ...p, visibility: next } : p));
+            showToast(next === "P" ? "Playlista publiczna" : "Playlista prywatna", "success");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się zmienić widoczności", "error");
+        } finally {
+            setVisBusy(false);
+        }
+    }, [token, playlist?.playlistID, isOwner, showToast]);
+
+    // ====== REORDER ======
+    const startReorder = useCallback(() => {
+        setOrderDraft(sortedItems.map((r) => r.songID));
+        setReorderMode(true);
+    }, [sortedItems]);
+
+    const cancelReorder = useCallback(() => {
+        setReorderMode(false);
+        setOrderDraft([]);
+    }, []);
+
+    const moveSong = useCallback((songID, dir) => {
+        setOrderDraft((prev) => {
+            const i = prev.findIndex((x) => String(x) === String(songID));
+            if (i < 0) return prev;
+            const j = i + dir;
+            if (j < 0 || j >= prev.length) return prev;
+            const copy = prev.slice();
+            const tmp = copy[i];
+            copy[i] = copy[j];
+            copy[j] = tmp;
+            return copy;
+        });
+    }, []);
+
+    const saveReorder = useCallback(async () => {
+        if (!token || !playlist?.playlistID) return;
+
+        setReorderBusy(true);
+        try {
+            await apiFetch(`/playlists/${playlist.playlistID}/reorder`, {
+                token,
+                method: "PATCH",
+                body: { order: orderDraft },
+            });
+
+            showToast("Zapisano kolejność", "success");
+            setReorderMode(false);
+            setOrderDraft([]);
+
+            const s = await fetchSongsOnly();
+            setItems(s);
+        } catch (e) {
+            showToast(e?.message || "Nie udało się zapisać kolejności", "error");
+        } finally {
+            setReorderBusy(false);
+        }
+    }, [token, playlist?.playlistID, orderDraft, showToast, fetchSongsOnly]);
+
+    // ====== RENDER ======
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
 
@@ -292,6 +587,208 @@ export default function PlaylistPage() {
                     }}
                 >
                     {toast.text}
+                </div>
+            ) : null}
+
+            {/* MODAL: REPORT PLAYLIST */}
+            {reportOpen ? (
+                <div
+                    style={styles.modalOverlay}
+                    onMouseDown={() => {
+                        if (!reportBusy) setReportOpen(false);
+                    }}
+                >
+                    <div style={styles.modalCard} onMouseDown={(e) => e.stopPropagation()}>
+                        <div style={styles.modalTitle}>Zgłoś playlistę</div>
+
+                        <div style={styles.modalHint}>Opisz krótko powód zgłoszenia (max 255 znaków).</div>
+
+                        <textarea
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value.slice(0, 255))}
+                            placeholder="Np. spam, obraźliwe treści, podszywanie się…"
+                            style={styles.textarea}
+                            disabled={reportBusy}
+                        />
+
+                        <div style={styles.modalFooter}>
+                            <div style={styles.counter}>{reportReason.length}/255</div>
+
+                            <div style={{ display: "flex", gap: 10 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setReportOpen(false)}
+                                    style={styles.ghostBtn}
+                                    disabled={reportBusy}
+                                >
+                                    Anuluj
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={submitReport}
+                                    style={{
+                                        ...styles.primaryBtn,
+                                        opacity: reportBusy ? 0.6 : 1,
+                                        cursor: reportBusy ? "not-allowed" : "pointer",
+                                    }}
+                                    disabled={reportBusy}
+                                >
+                                    Wyślij zgłoszenie
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {/* MODAL: COLLAB / INVITE */}
+            {inviteOpen ? (
+                <div
+                    style={styles.modalOverlay}
+                    onMouseDown={() => {
+                        if (!collabUiBusy && !collabBusy) setInviteOpen(false);
+                    }}
+                >
+                    <div style={styles.modalCard} onMouseDown={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                            <div style={styles.modalTitle}>Współtwórcy playlisty</div>
+
+                            {isOwner ? (
+                                <button
+                                    type="button"
+                                    onClick={toggleCollaborativeMode}
+                                    disabled={collabBusy}
+                                    style={{
+                                        ...styles.ghostBtn,
+                                        padding: "8px 10px",
+                                        opacity: collabBusy ? 0.6 : 1,
+                                        cursor: collabBusy ? "not-allowed" : "pointer",
+                                    }}
+                                    title="Włącz/wyłącz współtworzenie"
+                                >
+                                    Współtworzenie:{" "}
+                                    <span style={{ fontWeight: 900, color: isCollabOn ? "#1db954" : "#aaa" }}>
+                                        {isCollabOn ? "ON" : "OFF"}
+                                    </span>
+                                </button>
+                            ) : null}
+                        </div>
+
+                        {isOwner ? (
+                            <>
+                                <div style={styles.modalHint}>
+                                    Zapraszaj użytkowników po <b>userName</b>. Edycję playlisty mają tylko osoby zaakceptowane.
+                                </div>
+
+                                {!isCollabOn ? (
+                                    <div style={styles.modalHint}>Najpierw włącz współtworzenie, aby wysyłać zaproszenia.</div>
+                                ) : null}
+
+                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                                    <input
+                                        value={inviteName}
+                                        onChange={(e) => setInviteName(e.target.value)}
+                                        placeholder="userName (np. JanKowalski)"
+                                        style={styles.input}
+                                        disabled={collabUiBusy || !isCollabOn}
+                                    />
+
+                                    <button
+                                        type="button"
+                                        style={{
+                                            ...styles.primaryBtn,
+                                            opacity: collabUiBusy || !isCollabOn ? 0.6 : 1,
+                                            cursor: collabUiBusy || !isCollabOn ? "not-allowed" : "pointer",
+                                        }}
+                                        disabled={collabUiBusy || !isCollabOn}
+                                        onClick={sendInvite}
+                                    >
+                                        Wyślij zaproszenie
+                                    </button>
+                                </div>
+
+                                <div style={{ marginTop: 12 }}>
+                                    <div style={{ opacity: 0.85, fontSize: 13, marginBottom: 8 }}>Lista współtwórców</div>
+
+                                    {collabList.length ? (
+                                        <div style={{ display: "grid", gap: 8 }}>
+                                            {collabList.map((c) => (
+                                                <div key={`${c.userID}-${c.status}-${c.createdAt || ""}`} style={styles.collabRowItem}>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div
+                                                            style={{
+                                                                fontWeight: 900,
+                                                                whiteSpace: "nowrap",
+                                                                overflow: "hidden",
+                                                                textOverflow: "ellipsis",
+                                                            }}
+                                                        >
+                                                            {c.user?.userName || `User ${c.userID}`}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, opacity: 0.75 }}>{c.status}</div>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        style={styles.smallDangerBtn}
+                                                        disabled={collabUiBusy}
+                                                        onClick={() => removeCollab(c.userID)}
+                                                    >
+                                                        Usuń
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ opacity: 0.7, fontSize: 13 }}>Brak współtwórców</div>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {myCollabStatus === "INVITED" ? (
+                                    <>
+                                        <div style={styles.modalHint}>Masz zaproszenie do współtworzenia tej playlisty.</div>
+
+                                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                                            <button
+                                                type="button"
+                                                style={styles.primaryBtn}
+                                                disabled={collabUiBusy}
+                                                onClick={() => respondInvite("ACCEPT")}
+                                            >
+                                                Akceptuj
+                                            </button>
+                                            <button
+                                                type="button"
+                                                style={styles.ghostBtn}
+                                                disabled={collabUiBusy}
+                                                onClick={() => respondInvite("DECLINE")}
+                                            >
+                                                Odrzuć
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : myCollabStatus === "ACCEPTED" ? (
+                                    <div style={styles.modalHint}>Jesteś zaakceptowanym współtwórcą tej playlisty.</div>
+                                ) : (
+                                    <div style={styles.modalHint}>Nie masz zaproszenia do współtworzenia.</div>
+                                )}
+                            </>
+                        )}
+
+                        <div style={{ ...styles.modalFooter, justifyContent: "flex-end" }}>
+                            <button
+                                type="button"
+                                onClick={() => setInviteOpen(false)}
+                                style={styles.ghostBtn}
+                                disabled={collabUiBusy || collabBusy}
+                            >
+                                Zamknij
+                            </button>
+                        </div>
+                    </div>
                 </div>
             ) : null}
 
@@ -318,10 +815,29 @@ export default function PlaylistPage() {
                 onToast={showToast}
             />
 
+            {/* hidden input for cover */}
+            <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) uploadCover(f);
+                }}
+            />
+
             {/* HEADER */}
             <div style={styles.header}>
                 <div style={styles.coverWrap}>
-                    {playlistCover ? <img src={playlistCover} alt="cover" style={styles.coverImg} /> : null}
+                    {playlistCover ? (
+                        <img src={playlistCover} alt="cover" style={styles.coverImg} />
+                    ) : (
+                        <div style={styles.coverPlaceholder}>
+                            <Music size={46} style={{ opacity: 0.85 }} />
+                        </div>
+                    )}
                 </div>
 
                 <div style={{ minWidth: 0 }}>
@@ -394,36 +910,174 @@ export default function PlaylistPage() {
                                 </>
                             )}
                         </button>
+
+                        {/* owner: cover upload/delete */}
+                        {isOwner ? (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => coverInputRef.current?.click()}
+                                    disabled={coverBusy}
+                                    style={{ ...styles.ghostBtn, opacity: coverBusy ? 0.6 : 1 }}
+                                    title="Wgraj okładkę"
+                                >
+                                    Okładka: wgraj
+                                </button>
+
+                                {playlistCover ? (
+                                    <button
+                                        type="button"
+                                        onClick={deleteCover}
+                                        disabled={coverBusy}
+                                        style={{ ...styles.ghostBtn, opacity: coverBusy ? 0.6 : 1 }}
+                                        title="Usuń okładkę"
+                                    >
+                                        Okładka: usuń
+                                    </button>
+                                ) : null}
+                            </>
+                        ) : null}
+
+                        {/* owner: visibility */}
+                        {isOwner ? (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => setVisibility("P")}
+                                    disabled={visBusy}
+                                    style={{
+                                        ...styles.ghostBtn,
+                                        borderColor: playlist?.visibility === "P" ? "#1db954" : "#333",
+                                        opacity: visBusy ? 0.6 : 1,
+                                    }}
+                                    title="Ustaw publiczną"
+                                >
+                                    Publiczna
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setVisibility("R")}
+                                    disabled={visBusy}
+                                    style={{
+                                        ...styles.ghostBtn,
+                                        borderColor: playlist?.visibility === "R" ? "#ffb4b4" : "#333",
+                                        opacity: visBusy ? 0.6 : 1,
+                                    }}
+                                    title="Ustaw prywatną"
+                                >
+                                    Prywatna
+                                </button>
+                            </>
+                        ) : null}
+
+                        {/* canEdit: reorder */}
+                        {canEdit ? (
+                            !reorderMode ? (
+                                <button type="button" onClick={startReorder} style={styles.ghostBtn} title="Zmień kolejność utworów">
+                                    Zmień kolejność
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={saveReorder}
+                                        disabled={reorderBusy}
+                                        style={{
+                                            ...styles.primaryBtn,
+                                            opacity: reorderBusy ? 0.6 : 1,
+                                            cursor: reorderBusy ? "not-allowed" : "pointer",
+                                        }}
+                                        title="Zapisz kolejność"
+                                    >
+                                        Zapisz kolejność
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={cancelReorder}
+                                        disabled={reorderBusy}
+                                        style={{
+                                            ...styles.ghostBtn,
+                                            opacity: reorderBusy ? 0.6 : 1,
+                                            cursor: reorderBusy ? "not-allowed" : "pointer",
+                                        }}
+                                        title="Anuluj"
+                                    >
+                                        Anuluj
+                                    </button>
+                                </>
+                            )
+                        ) : null}
+
+                        {/* collab button */}
+                        {(isOwner || myCollabStatus === "INVITED" || myCollabStatus === "ACCEPTED") ? (
+                            <button
+                                type="button"
+                                onClick={() => setInviteOpen(true)}
+                                style={styles.ghostBtn}
+                                title="Współtwórcy / zaproszenia"
+                            >
+                                Współtwórcy
+                                {myCollabStatus === "INVITED" ? (
+                                    <span style={{ marginLeft: 8, color: "#ffb4b4", fontWeight: 900 }}>•</span>
+                                ) : null}
+                            </button>
+                        ) : null}
+
+                        {/* report only for not-owner */}
+                        {!isOwner ? (
+                            <button
+                                type="button"
+                                onClick={() => setReportOpen(true)}
+                                disabled={!playlist}
+                                style={{
+                                    ...styles.reportBtn,
+                                    opacity: !playlist ? 0.6 : 1,
+                                    cursor: !playlist ? "not-allowed" : "pointer",
+                                }}
+                                title="Zgłoś playlistę"
+                            >
+                                <Flag size={16} style={{ display: "block" }} /> Zgłoś
+                            </button>
+                        ) : null}
                     </div>
                 </div>
             </div>
 
             {/* TRACKLIST */}
             <div style={styles.list}>
-                {sortedItems.map((row, idx) => {
+                {displayRows.map((row, idx) => {
                     const s = row.song || {};
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
                     const playable = queueIdx != null;
 
                     const artist = s.creatorName || s?.creator?.user?.userName || playlistOwner || "—";
 
+                    const addedAtLabel = formatDateTime(row?.addedAt);
+                    const addedByName = row?.addedBy?.userName || null;
+
+                    const key = `${row.playlistID}-${row.songID}-${row.position ?? idx}`;
+
                     return (
-                        <div key={row.playlistSongID || `${s.songID}-${row.position}`} style={styles.row}>
+                        <div key={key} style={styles.row(canEdit)}>
                             <button
                                 type="button"
-                                onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
-                                disabled={!playable}
+                                onClick={() => {
+                                    if (reorderMode) return;
+                                    setNewQueue(queueItems, queueIdx ?? 0);
+                                }}
+                                disabled={!playable || reorderMode}
                                 style={{
                                     ...styles.rowPlayBtn,
-                                    opacity: playable ? 1 : 0.45,
-                                    cursor: playable ? "pointer" : "not-allowed",
+                                    opacity: playable && !reorderMode ? 1 : 0.45,
+                                    cursor: playable && !reorderMode ? "pointer" : "not-allowed",
                                 }}
-                                title="Odtwórz od tego"
+                                title={reorderMode ? "Tryb zmiany kolejności" : "Odtwórz od tego"}
                             >
                                 ▶
                             </button>
 
-                            {/* Mini cover (po prawej od play) */}
                             <div style={styles.miniCoverWrap}>
                                 {pickSongCover(s) ? (
                                     <img src={pickSongCover(s)} alt="" style={styles.miniCoverImg} />
@@ -438,25 +1092,79 @@ export default function PlaylistPage() {
                                 <div style={styles.trackTitle} title={s.songName || "Utwór"}>
                                     {s.songName || "Utwór"}
                                 </div>
+
                                 <div style={styles.trackSub} title={artist}>
                                     {artist}
+                                    {addedAtLabel ? (
+                                        <span style={{ opacity: 0.65 }}>
+                                            {" "}• dodano {addedAtLabel}
+                                            {addedByName ? ` • przez ${addedByName}` : ""}
+                                        </span>
+                                    ) : null}
                                 </div>
                             </div>
 
-                            <LikeButton songID={s.songID} onToast={showToast} />
+                            <div style={styles.likeWrap}>
+                                <LikeButton songID={s.songID} onToast={showToast} />
+                            </div>
 
-                            <button
-                                type="button"
-                                onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
-                                style={styles.moreBtn}
-                                title="Opcje"
-                            >
-                                ⋯
-                            </button>
+                            {/* reorder arrows OR normal menu */}
+                            {reorderMode ? (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 6,
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        justifySelf: "end",
+                                        width: 44, // trzymamy się szerokości kolumny
+                                    }}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => moveSong(row.songID, -1)}
+                                        title="W górę"
+                                        style={{
+                                            ...styles.moreBtn,
+                                            width: 38,
+                                            height: 16,
+                                            fontSize: 12,
+                                            lineHeight: "16px",
+                                        }}
+                                    >
+                                        ↑
+                                    </button>
 
+                                    <button
+                                        type="button"
+                                        onClick={() => moveSong(row.songID, +1)}
+                                        title="W dół"
+                                        style={{
+                                            ...styles.moreBtn,
+                                            width: 38,
+                                            height: 16,
+                                            fontSize: 12,
+                                            lineHeight: "16px",
+                                        }}
+                                    >
+                                        ↓
+                                    </button>
+                                </div>
+                            ) : canEdit ? (
+                                <button
+                                    type="button"
+                                    onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
+                                    style={styles.moreBtn}
+                                    title="Opcje"
+                                >
+                                    ⋯
+                                </button>
+                            ) : (
+                                <div />
+                            )}
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
-
                     );
                 })}
             </div>
@@ -528,14 +1236,16 @@ const styles = {
 
     list: { marginTop: 18 },
 
-    row: {
+    row: (canEdit) => ({
         display: "grid",
-        gridTemplateColumns: "44px 44px 34px minmax(0, 1fr) 44px 44px 70px",
+        gridTemplateColumns: canEdit
+            ? "44px 44px 34px minmax(0, 1fr) 44px 44px 70px"
+            : "44px 44px 34px minmax(0, 1fr) 44px 70px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
         borderBottom: "1px solid #2a2a2a",
-    },
+    }),
 
     rowPlayBtn: {
         width: 38,
@@ -579,14 +1289,154 @@ const styles = {
         justifyContent: "center",
     },
 
+    likeWrap: {
+        justifySelf: "end",
+    },
+
+    reportBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #5a2a2a",
+        background: "#2a1a1a",
+        color: "#ffb4b4",
+        fontWeight: 900,
+    },
+
+    modalOverlay: {
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+    },
+
+    modalCard: {
+        width: "min(560px, 100%)",
+        background: "#1e1e1e",
+        border: "1px solid #2a2a2a",
+        borderRadius: 14,
+        padding: 14,
+        boxShadow: "0 18px 50px rgba(0,0,0,0.55)",
+    },
+
+    modalTitle: {
+        fontWeight: 900,
+        fontSize: 16,
+        marginBottom: 10,
+    },
+
+    modalHint: {
+        opacity: 0.85,
+        fontSize: 13,
+        marginBottom: 10,
+    },
+
+    textarea: {
+        width: "100%",
+        minHeight: 110,
+        resize: "vertical",
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        background: "#121212",
+        color: "white",
+        padding: 12,
+        outline: "none",
+        fontSize: 13,
+        boxSizing: "border-box",
+    },
+
+    modalFooter: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginTop: 12,
+        flexWrap: "wrap",
+    },
+
+    counter: {
+        opacity: 0.7,
+        fontSize: 12,
+    },
+
+    collabRow: {
+        marginTop: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+    },
+
+    collabBtn: {
+        padding: "8px 12px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        fontWeight: 900,
+    },
+
+    inviteBox: {
+        marginTop: 12,
+        background: "#1e1e1e",
+        border: "1px solid #2a2a2a",
+        borderRadius: 12,
+        padding: 12,
+    },
+
+    input: {
+        height: 38,
+        borderRadius: 10,
+        border: "1px solid #2a2a2a",
+        background: "#121212",
+        color: "white",
+        padding: "0 12px",
+        outline: "none",
+        minWidth: 220,
+    },
+
+    collabRowItem: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        background: "#141414",
+    },
+
+    smallDangerBtn: {
+        padding: "8px 10px",
+        borderRadius: 10,
+        border: "1px solid #5a2a2a",
+        background: "#2a1a1a",
+        color: "#ffb4b4",
+        fontWeight: 900,
+    },
+
+    coverPlaceholder: {
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#2a2a2a",
+    },
+
     miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
     miniCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
 
     trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },
-
     trackMain: { minWidth: 0, overflow: "hidden" },
     trackTitle: { fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-    trackSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-
+    trackSub: {fontSize: 12, opacity: 0.7, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",},
     trackTime: { opacity: 0.75, fontSize: 12, textAlign: "right", fontVariantNumeric: "tabular-nums" },
 };

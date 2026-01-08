@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PublicOnlyRoute from "./components/common/PublicOnlyRoute";
+import AdminRoute from "./routes/AdminRoute";
 
 import { AuthProvider } from "./contexts/AuthContext";
 import { PlayerProvider } from "./contexts/PlayerContext";
@@ -26,6 +27,10 @@ import UserPage from "./pages/users/UserPage.jsx";
 import PublicUserPage from "./pages/users/PublicUserPage";
 import CreatorPage from "./pages/creators/CreatorPage.jsx";
 import PublicCreatorPage from "./pages/creators/PublicCreatorPage.jsx";
+import AdminStatsPage from "./pages/admin/AdminStatsPage.jsx";
+import AdminUsersPage from "./pages/admin/AdminUsersPage.jsx";
+import AdminReportsPage from "./pages/admin/AdminReportsPage";
+import AdminReportsDetailsPage from "./pages/admin/AdminReportsDetailsPage";
 
 import "./index.css";
 
@@ -60,6 +65,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/users/:id" element={<PublicUserPage/>} />
                             <Route path="/creator/me" element={<CreatorPage/>} />
                             <Route path="/creators/:id" element={<PublicCreatorPage />} />
+
+
+                            {/* Tylko administrator */}
+                            <Route element={<AdminRoute />}>
+                                <Route path="/admin/stats" element={<AdminStatsPage />} />
+                                <Route path="/admin/users" element={<AdminUsersPage />} />
+                                <Route path="/admin/reports" element={<AdminReportsPage />} />
+                                <Route path="/admin/reports/:id" element={<AdminReportsDetailsPage />} />
+                            </Route>
                         </Route>
 
                         {/* domyślne */}

@@ -4,7 +4,7 @@ import { usePlayer } from "../../contexts/PlayerContext";
 import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
 
 export default function HomePage() {
-    const { token, user, logout } = useAuth();
+    const { token, user } = useAuth();
     const { setNewQueue } = usePlayer();
 
     const [songs, setSongs] = useState([]);

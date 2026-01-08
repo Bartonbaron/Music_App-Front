@@ -8,8 +8,6 @@ import {
     Save,
     X,
     Play,
-    Mic2,
-    Album as AlbumIcon,
     ListMusic,
 } from "lucide-react";
 

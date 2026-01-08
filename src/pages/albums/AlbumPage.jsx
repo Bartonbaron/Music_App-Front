@@ -50,7 +50,7 @@ function pickDuration(seconds) {
 
 export default function AlbumPage() {
     const { id } = useParams();
-    const { token, user } = useAuth(); // jeśli u Ciebie useAuth nie zwraca user — isOwner spadnie do false
+    const { token, user } = useAuth();
     const { setNewQueue } = usePlayer();
     const { albums: libraryAlbums, toggleAlbumInLibrary } = useLibrary();
 

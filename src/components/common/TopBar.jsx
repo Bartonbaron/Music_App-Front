@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Home, User as UserIcon, LogOut, ChevronDown, Pencil } from "lucide-react";
+import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, Shield, BarChart3, Flag, Users as UsersIcon,} from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+
+const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
 
 export default function TopBar() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
 
     const isCreator = useMemo(() => user?.role?.roleName === "Creator", [user?.role?.roleName]);
+
+    const isAdmin = useMemo(() => {
+        if (!Number.isFinite(ADMIN_ROLE_ID)) return false;
+        return Number(user?.roleID) === ADMIN_ROLE_ID;
+    }, [user?.roleID]);
 
     const avatarSrc = user?.signedProfilePicURL || null;
 
@@ -63,6 +70,22 @@ export default function TopBar() {
     const onGoCreatorPanel = useCallback(() => {
         close();
         navigate("/creator/me");
+    }, [close, navigate]);
+
+    // Trasy admina
+    const onGoAdminStats = useCallback(() => {
+        close();
+        navigate("/admin/stats");
+    }, [close, navigate]);
+
+    const onGoAdminReports = useCallback(() => {
+        close();
+        navigate("/admin/reports");
+    }, [close, navigate]);
+
+    const onGoAdminUsers = useCallback(() => {
+        close();
+        navigate("/admin/users");
     }, [close, navigate]);
 
     return (
@@ -133,6 +156,46 @@ export default function TopBar() {
                                     <Pencil size={16} style={{ display: "block" }} />
                                     <span style={{ flex: 1, textAlign: "left" }}>Edytuj profil twórcy</span>
                                 </button>
+                            ) : null}
+
+                            {/* Opcje tylko dla Administratora */}
+                            {isAdmin ? (
+                                <>
+                                    <div style={styles.sep} />
+
+                                    <button
+                                        type="button"
+                                        style={styles.menuItem}
+                                        role="menuitem"
+                                        onClick={onGoAdminStats}
+                                        title="Admin dashboard"
+                                    >
+                                        <BarChart3 size={16} style={{ display: "block" }} />
+                                        <span style={{ flex: 1, textAlign: "left" }}>Statystki globalne</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        style={styles.menuItem}
+                                        role="menuitem"
+                                        onClick={onGoAdminReports}
+                                        title="Moderacja zgłoszeń"
+                                    >
+                                        <Flag size={16} style={{ display: "block" }} />
+                                        <span style={{ flex: 1, textAlign: "left" }}>Zgłoszenia</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        style={styles.menuItem}
+                                        role="menuitem"
+                                        onClick={onGoAdminUsers}
+                                        title="Moderacja użytkowników"
+                                    >
+                                        <UsersIcon size={16} style={{ display: "block" }} />
+                                        <span style={{ flex: 1, textAlign: "left" }}>Użytkownicy</span>
+                                    </button>
+                                </>
                             ) : null}
 
                             <div style={styles.sep} />
@@ -224,7 +287,7 @@ const styles = {
         position: "absolute",
         right: 0,
         top: 44,
-        width: 220,
+        width: 230,
         background: "#1b1b1b",
         border: "1px solid #2a2a2a",
         borderRadius: 12,
@@ -243,6 +306,19 @@ const styles = {
         color: "white",
         cursor: "pointer",
         fontWeight: 800,
+    },
+
+    menuSectionLabel: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "10px 12px 6px 12px",
+        color: "#bdbdbd",
+        fontWeight: 900,
+        fontSize: 12,
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+        userSelect: "none",
     },
 
     sep: {

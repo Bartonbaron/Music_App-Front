@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Plus, Trash2, Play, X, Save, Image as ImageIcon, Pencil, Music2, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, Play, X, Save, Image as ImageIcon, Pencil, Music2, ArrowUp, ArrowDown, Flag } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -93,11 +93,20 @@ export default function AlbumPage() {
             setAlbum(a || null);
             setSongs(Array.isArray(s?.songs) ? s.songs : []);
         } catch (e) {
+            const rd = e?.data?.releaseDate;
+            if (rd) {
+                showToast(
+                    `${e.message} ${new Date(rd).toLocaleDateString("pl-PL")}`,
+                    "error"
+                );
+            } else {
+                showToast(e?.message || "Błąd", "error");
+            }
             setMsg(e?.message || "Błąd");
         } finally {
             setLoading(false);
         }
-    }, [id, token]);
+    }, [id, showToast, token]);
 
     useEffect(() => {
         refresh();
@@ -109,6 +118,41 @@ export default function AlbumPage() {
 
     const albumCover = album?.signedCover || null;
     const albumArtist = album?.creator?.user?.userName || album?.creatorName || null;
+
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportReason, setReportReason] = useState("");
+    const [reportBusy, setReportBusy] = useState(false);
+
+    const submitReport = useCallback(async () => {
+        if (!token || !album?.albumID) return;
+
+        const reason = reportReason.trim();
+        if (reason.length < 3) {
+            showToast("Podaj powód (min. 3 znaki)", "error");
+            return;
+        }
+
+        setReportBusy(true);
+        try {
+            await apiFetch("/reports", {
+                token,
+                method: "POST",
+                body: {
+                    contentType: "album",
+                    contentID: Number(album.albumID),
+                    reason: reason.slice(0, 255),
+                },
+            });
+
+            showToast("Zgłoszenie wysłane", "success");
+            setReportOpen(false);
+            setReportReason("");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wysłać zgłoszenia", "error");
+        } finally {
+            setReportBusy(false);
+        }
+    }, [token, album?.albumID, reportReason, showToast]);
 
     const releaseDateLabel = useMemo(() => {
         return formatFullDate(album?.releaseDate || album?.createdAt);
@@ -133,9 +177,11 @@ export default function AlbumPage() {
                     songName: s.songName ?? mapped.title,
                     songID: s.songID ?? mapped.songID,
                     duration: s.duration ?? mapped.duration,
+                    isHidden: !!s?.isHidden || s?.moderationStatus === "HIDDEN",
+                    moderationStatus: s?.moderationStatus,
                 };
             })
-            .filter((x) => !!x.signedAudio);
+            .filter((x) => !!x.signedAudio && !x.isHidden);
     }, [sortedSongs, albumCover, albumArtist]);
 
     const queueIndexBySongId = useMemo(() => {
@@ -235,7 +281,15 @@ export default function AlbumPage() {
                 showToast(result?.message || "Błąd biblioteki", "error");
             }
         } catch (e) {
-            showToast(e?.message || "Błąd biblioteki", "error");
+            const rd = e?.data?.releaseDate;
+            if (rd) {
+                showToast(
+                    `${e.message} ${new Date(rd).toLocaleDateString("pl-PL")}`,
+                    "error"
+                );
+            } else {
+                showToast(e?.message || "Błąd biblioteki", "error");
+            }
         } finally {
             setSavingLibrary(false);
         }
@@ -533,6 +587,63 @@ export default function AlbumPage() {
                 onToast={showToast}
             />
 
+            {/* MODAL: REPORT ALBUM */}
+            {reportOpen ? (
+                <div
+                    style={styles.modalOverlay}
+                    onMouseDown={() => {
+                        if (!reportBusy) setReportOpen(false);
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div style={styles.modalCard} onMouseDown={(e) => e.stopPropagation()}>
+                        <div style={styles.modalTitle}>Zgłoś album</div>
+
+                        <div style={styles.modalHint}>
+                            Opisz krótko powód zgłoszenia (max 255 znaków).
+                        </div>
+
+                        <textarea
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value.slice(0, 255))}
+                            placeholder="Np. spam, obraźliwe treści, podszywanie się…"
+                            style={styles.textareaSmall}
+                            disabled={reportBusy}
+                        />
+
+                        <div style={styles.modalFooterRow}>
+                            <div style={styles.counter}>{reportReason.length}/255</div>
+
+                            <div style={{ display: "flex", gap: 10 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setReportOpen(false)}
+                                    style={styles.ghostBtn}
+                                    disabled={reportBusy}
+                                >
+                                    Anuluj
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={submitReport}
+                                    disabled={reportBusy}
+                                    style={{
+                                        ...styles.reportBtn,
+                                        opacity: reportBusy ? 0.65 : 1,
+                                        cursor: reportBusy ? "not-allowed" : "pointer",
+                                    }}
+                                >
+                                    <Flag size={16} style={{ display: "block" }} />
+                                    {reportBusy ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             {/* HEADER */}
             <div style={styles.header}>
                 <div style={styles.coverWrap}>
@@ -608,6 +719,24 @@ export default function AlbumPage() {
                                 </>
                             )}
                         </button>
+
+                        {/* REPORT (tylko nie-właściciel) */}
+                        {!isOwner ? (
+                            <button
+                                type="button"
+                                onClick={() => setReportOpen(true)}
+                                disabled={!album}
+                                style={{
+                                    ...styles.reportBtn,
+                                    opacity: !album ? 0.6 : 1,
+                                    cursor: !album ? "not-allowed" : "pointer",
+                                }}
+                                title="Zgłoś album"
+                            >
+                                <Flag size={16} style={{ display: "block" }} />
+                                Zgłoś
+                            </button>
+                        ) : null}
 
                         {/* OWNER PANEL */}
                         {isOwner ? (
@@ -694,30 +823,59 @@ export default function AlbumPage() {
             <div style={styles.list}>
                 {shownSongs.map((s, idx) => {
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
-                    const playable = queueIdx != null;
+                    const playable = !!s?.signedAudio;
+
+                    const hidden = !!s?.isHidden || s?.moderationStatus === "HIDDEN";
+
+                    const menuDisabled = reorderMode || hidden;
+
+                    const disabledRow = hidden;
+                    const rowStyle = disabledRow
+                        ? { ...styles.row, ...(styles.rowDisabled || {}), opacity: 0.55 }
+                        : styles.row;
 
                     return (
-                        <div key={s.songID || idx} style={styles.row}>
+                        <div key={s.songID || idx} style={rowStyle}>
                             <button
                                 type="button"
-                                onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
+                                onClick={() => {
+                                    if (reorderMode) return;
+                                    if (!playable) return;
+                                    setNewQueue(queueItems, queueIdx ?? 0);
+                                }}
                                 disabled={!playable || reorderMode}
                                 style={{
                                     ...styles.rowPlayBtn,
                                     opacity: playable && !reorderMode ? 1 : 0.45,
                                     cursor: playable && !reorderMode ? "pointer" : "not-allowed",
                                 }}
-                                title="Odtwórz od tego"
+                                title={
+                                    reorderMode
+                                        ? "Tryb zmiany kolejności"
+                                        : playable
+                                            ? "Odtwórz od tego"
+                                            : hidden
+                                                ? "Utwór ukryty przez administrację"
+                                                : "Utwór niedostępny"
+                                }
                             >
                                 ▶
                             </button>
 
-                            <div style={styles.trackNo}>{(reorderMode ? idx + 1 : s.trackNumber ?? idx + 1)}.</div>
+                            <div style={styles.trackNo}>
+                                {(reorderMode ? idx + 1 : s.trackNumber ?? idx + 1)}.
+                            </div>
 
                             <div style={styles.trackMain}>
                                 <div style={styles.trackTitle} title={s.songName || "Utwór"}>
                                     {s.songName || "Utwór"}
+                                    {hidden ? (
+                                        <span style={{ opacity: 0.75, marginLeft: 8, fontSize: 12 }}>
+                                (niedostępny)
+                            </span>
+                                    ) : null}
                                 </div>
+
                                 <div style={styles.trackSub} title={albumArtist || "—"}>
                                     {albumArtist || "—"}
                                 </div>
@@ -755,7 +913,9 @@ export default function AlbumPage() {
                                     </button>
                                 </div>
                             ) : (
-                                <LikeButton songID={s.songID} onToast={showToast} />
+                                <div style={{ opacity: hidden ? 0.45 : 1, pointerEvents: hidden ? "none" : "auto" }}>
+                                    <LikeButton songID={s.songID} onToast={showToast} />
+                                </div>
                             )}
 
                             <button
@@ -763,11 +923,12 @@ export default function AlbumPage() {
                                 onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
                                 style={{
                                     ...styles.moreBtn,
-                                    opacity: reorderMode ? 0.45 : 1,
-                                    cursor: reorderMode ? "not-allowed" : "pointer",
+                                    opacity: menuDisabled ? 0.45 : 1,
+                                    cursor: menuDisabled ? "not-allowed" : "pointer",
+                                    pointerEvents: menuDisabled ? "none" : "auto",
                                 }}
-                                disabled={reorderMode}
-                                title="Opcje"
+                                disabled={menuDisabled}
+                                title={hidden ? "Utwór ukryty" : "Opcje"}
                             >
                                 ⋯
                             </button>
@@ -1284,7 +1445,6 @@ const styles = {
         gap: 10,
     },
 
-    // Manage tracks UI
     sectionTitle: { fontWeight: 900, fontSize: 13, opacity: 0.85, letterSpacing: 0.4 },
     tracksBox: {
         border: "1px solid #2a2a2a",
@@ -1352,4 +1512,79 @@ const styles = {
         justifyContent: "center",
         padding: 0,
     },
+
+    reportBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #5a2a2a",
+        background: "#2a1a1a",
+        color: "#ffb4b4",
+        fontWeight: 900,
+    },
+
+    modalCard: {
+        width: "min(560px, 100%)",
+        background: "#1e1e1e",
+        border: "1px solid #2a2a2a",
+        borderRadius: 14,
+        padding: 14,
+        boxShadow: "0 18px 50px rgba(0,0,0,0.55)",
+    },
+
+    modalTitle: { fontWeight: 900, fontSize: 16, marginBottom: 10 },
+
+    modalHint: { opacity: 0.85, fontSize: 13, marginBottom: 10 },
+
+    textareaSmall: {
+        width: "100%",
+        minHeight: 110,
+        resize: "vertical",
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        background: "#121212",
+        color: "white",
+        padding: 12,
+        outline: "none",
+        fontSize: 13,
+        boxSizing: "border-box",
+    },
+
+    modalFooterRow: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginTop: 12,
+        flexWrap: "wrap",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.25)",
+    },
+
+    trackTitleRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        minWidth: 0,
+    },
+
+    badgeHidden: {
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: 0.8,
+        opacity: 0.85,
+        padding: "4px 8px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#151515",
+        flex: "0 0 auto",
+    },
+
+    counter: { opacity: 0.7, fontSize: 12 },
 };

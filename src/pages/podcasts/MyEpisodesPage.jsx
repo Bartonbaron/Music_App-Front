@@ -10,21 +10,10 @@ function pickPodcastCover(p) {
     return p?.signedCover || null;
 }
 
-// lokalny helper: usuwanie z ulubionych (Moje odcinki)
-async function unfavoritePodcast(token, podcastID) {
-    const res = await fetch(`http://localhost:3000/api/podcasts/${podcastID}/unfavorite`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || "Failed to remove from favorites");
-    return data;
-}
-
 export default function MyEpisodesPage() {
     const { setNewQueue } = usePlayer();
     const { token } = useAuth();
-    const { favoritePodcasts, favoritePodcastIds, loading, error, refetch } = useLibrary();
+    const { favoritePodcasts, favoritePodcastIds, loading, error, togglePodcastFavorite } = useLibrary();
 
     const [toast, setToast] = useState(null);
     const [busyId, setBusyId] = useState(null);
@@ -34,16 +23,14 @@ export default function MyEpisodesPage() {
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
-    const episodes = useMemo(() => {
-        return Array.isArray(favoritePodcasts) ? favoritePodcasts : [];
-    }, [favoritePodcasts]);
+    const episodes = useMemo(() => (Array.isArray(favoritePodcasts) ? favoritePodcasts : []), [favoritePodcasts]);
 
     const queueItems = useMemo(() => {
         return episodes
             .map((p) => ({
                 type: "podcast",
                 podcastID: p.podcastID,
-                title: p.title || p.podcastName || `Podcast ${p.podcastID}`,
+                title: p.title || `Podcast ${p.podcastID}`,
                 creatorName: p.creatorName || "—",
                 signedAudio: p.signedAudio || null,
                 signedCover: p.signedCover || null,
@@ -79,10 +66,17 @@ export default function MyEpisodesPage() {
             }
             if (!podcastID) return;
 
+            if (!togglePodcastFavorite) {
+                showToast("Brak togglePodcastFavorite w LibraryContext", "error");
+                return;
+            }
+
             setBusyId(podcastID);
             try {
-                await unfavoritePodcast(token, podcastID);
-                await refetch?.();
+                // isFavorite = true -> unfavorite
+                const result = await togglePodcastFavorite(podcastID, true);
+                if (!result?.success) throw new Error(result?.message || "Błąd usuwania");
+
                 showToast("Usunięto z Moich odcinków", "success");
             } catch (e) {
                 showToast(e?.message || "Błąd usuwania", "error");
@@ -90,7 +84,7 @@ export default function MyEpisodesPage() {
                 setBusyId(null);
             }
         },
-        [token, refetch, showToast]
+        [token, togglePodcastFavorite, showToast]
     );
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
@@ -151,8 +145,11 @@ export default function MyEpisodesPage() {
                 {episodes.length === 0 ? <div style={styles.hint}>Brak zapisanych odcinków</div> : null}
 
                 {episodes.map((p, idx) => {
+                    const hidden = !!p?.isHidden || p?.moderationStatus === "HIDDEN";
+                    const playable = !!p?.signedAudio && !hidden;
+
                     const queueIdx = queueIndexById.get(String(p.podcastID));
-                    const playable = queueIdx != null;
+                    const canQueue = playable && queueIdx != null;
 
                     const title = p.title || p.podcastName || `Podcast ${p.podcastID}`;
                     const creatorName = p.creatorName || "—";
@@ -161,16 +158,27 @@ export default function MyEpisodesPage() {
                     const isBusy = busyId === p.podcastID;
 
                     return (
-                        <div key={p.podcastID || idx} style={styles.row}>
+                        <div
+                            key={p.podcastID || idx}
+                            style={{
+                                ...styles.row,
+                                opacity: playable ? 1 : 0.5,
+                                filter: playable ? "none" : "grayscale(0.25)",
+                            }}
+                            title={!playable ? "Ten podcast jest obecnie niedostępny" : undefined}
+                        >
                             <button
-                                onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
-                                disabled={!playable}
+                                onClick={() => {
+                                    if (!canQueue) return;
+                                    setNewQueue(queueItems, queueIdx);
+                                }}
+                                disabled={!canQueue}
                                 style={{
                                     ...styles.rowPlayBtn,
-                                    opacity: playable ? 1 : 0.45,
-                                    cursor: playable ? "pointer" : "not-allowed",
+                                    opacity: canQueue ? 1 : 0.45,
+                                    cursor: canQueue ? "pointer" : "not-allowed",
                                 }}
-                                title="Odtwórz od tego"
+                                title={canQueue ? "Odtwórz od tego" : "Podcast niedostępny"}
                             >
                                 ▶
                             </button>
@@ -178,7 +186,14 @@ export default function MyEpisodesPage() {
                             {/* Mini cover */}
                             <div style={styles.miniCoverWrap}>
                                 {pickPodcastCover(p) ? (
-                                    <img src={pickPodcastCover(p)} alt="" style={styles.miniCoverImg} />
+                                    <img
+                                        src={pickPodcastCover(p)}
+                                        alt=""
+                                        style={{
+                                            ...styles.miniCoverImg,
+                                            opacity: playable ? 1 : 0.7,
+                                        }}
+                                    />
                                 ) : (
                                     <div style={styles.miniCoverPh} />
                                 )}
@@ -189,6 +204,11 @@ export default function MyEpisodesPage() {
                             <div style={styles.trackMain}>
                                 <div style={styles.trackTitle} title={title}>
                                     {title}
+                                    {!playable ? (
+                                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>
+                                (niedostępny)
+                            </span>
+                                    ) : null}
                                 </div>
                                 <div style={styles.trackSub} title={creatorName}>
                                     {creatorName}

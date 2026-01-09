@@ -16,20 +16,22 @@ export default function SongActionsModal({open, onClose, songTitle, canRemoveFro
                 </div>
 
                 <div style={styles.buttons}>
-                    <button
-                        type="button"
-                        onClick={onAddToPlaylist}
-                        disabled={busy}
-                        style={{
-                            ...styles.btn,
-                            opacity: busy ? 0.6 : 1,
-                            cursor: busy ? "not-allowed" : "pointer",
-                        }}
-                    >
-                        Dodaj do playlisty
-                    </button>
+                    {typeof onAddToPlaylist === "function" ? (
+                        <button
+                            type="button"
+                            onClick={onAddToPlaylist}
+                            disabled={busy}
+                            style={{
+                                ...styles.btn,
+                                opacity: busy ? 0.6 : 1,
+                                cursor: busy ? "not-allowed" : "pointer",
+                            }}
+                        >
+                            Dodaj do playlisty
+                        </button>
+                    ) : null}
 
-                    {canRemoveFromCurrent ? (
+                    {canRemoveFromCurrent && typeof onRemoveFromCurrent === "function" ? (
                         <button
                             type="button"
                             onClick={onRemoveFromCurrent}

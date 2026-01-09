@@ -151,23 +151,37 @@ export default function LikedSongsPage() {
                 {songs.length === 0 ? <div style={styles.hint}>Brak polubionych utworów</div> : null}
 
                 {songs.map((s, idx) => {
+                    const hidden = !!s?.isHidden || s?.moderationStatus === "HIDDEN";
+                    const playable = !!s?.signedAudio && !hidden;
+
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
-                    const playable = queueIdx != null;
+                    const canQueue = playable && queueIdx != null;
 
                     const liked = likedSongIds?.has(String(s.songID));
                     const likeBusy = likingId === s.songID;
 
                     return (
-                        <div key={s.songID || idx} style={styles.row}>
+                        <div
+                            key={s.songID || idx}
+                            style={{
+                                ...styles.row,
+                                opacity: playable ? 1 : 0.5,
+                                filter: playable ? "none" : "grayscale(0.25)",
+                            }}
+                            title={!playable ? "Ten utwór jest obecnie niedostępny" : undefined}
+                        >
                             <button
-                                onClick={() => setNewQueue(queueItems, queueIdx ?? 0)}
-                                disabled={!playable}
+                                onClick={() => {
+                                    if (!canQueue) return;
+                                    setNewQueue(queueItems, queueIdx);
+                                }}
+                                disabled={!canQueue}
                                 style={{
                                     ...styles.rowPlayBtn,
-                                    opacity: playable ? 1 : 0.45,
-                                    cursor: playable ? "pointer" : "not-allowed",
+                                    opacity: canQueue ? 1 : 0.45,
+                                    cursor: canQueue ? "pointer" : "not-allowed",
                                 }}
-                                title="Odtwórz od tego"
+                                title={canQueue ? "Odtwórz od tego" : "Utwór niedostępny"}
                             >
                                 ▶
                             </button>
@@ -178,7 +192,10 @@ export default function LikedSongsPage() {
                                     <img
                                         src={pickSongCover(s)}
                                         alt=""
-                                        style={styles.miniCoverImg}
+                                        style={{
+                                            ...styles.miniCoverImg,
+                                            opacity: playable ? 1 : 0.7,
+                                        }}
                                     />
                                 ) : (
                                     <div style={styles.miniCoverPh} />
@@ -188,7 +205,14 @@ export default function LikedSongsPage() {
                             <div style={styles.trackNo}>{idx + 1}.</div>
 
                             <div style={styles.trackMain}>
-                                <div style={styles.trackTitle}>{s.songName || "Utwór"}</div>
+                                <div style={styles.trackTitle}>
+                                    {s.songName || "Utwór"}
+                                    {!playable ? (
+                                        <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>
+                                (niedostępny)
+                            </span>
+                                    ) : null}
+                                </div>
                                 <div style={styles.trackSub}>{s.creatorName || "—"}</div>
                             </div>
 
@@ -202,7 +226,10 @@ export default function LikedSongsPage() {
                                     cursor: likeBusy ? "not-allowed" : "pointer",
                                 }}
                             >
-                                <Heart size={16} style={{ display: "block", fill: liked ? "currentColor" : "none" }} />
+                                <Heart
+                                    size={16}
+                                    style={{ display: "block", fill: liked ? "currentColor" : "none" }}
+                                />
                             </button>
 
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>

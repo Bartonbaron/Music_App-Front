@@ -112,7 +112,7 @@ export default function SongsPage() {
                     <div style={styles.kicker}>UTWORY</div>
                     <h1 style={styles.h1}>Utwory</h1>
                     <div style={styles.metaLine}>
-                        <span style={{ opacity: 0.85 }}>{songs.length} pozycji</span>
+                        <span style={{ opacity: 0.85 }}>{songs.length} utw.</span>
                     </div>
 
                     <div style={styles.actions}>
@@ -192,7 +192,7 @@ export default function SongsPage() {
 
                                         setNewQueue(playableItems, startIdx);
                                     }}
-                                    title={playable ? "Odtwórz" : "Brak audio"}
+                                    title={playable ? "Odtwórz" : "Utwór niedostępny"}
                                 >
                                     ▶ Odtwórz
                                 </button>

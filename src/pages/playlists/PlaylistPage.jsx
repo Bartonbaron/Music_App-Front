@@ -55,6 +55,7 @@ export default function PlaylistPage() {
     const { user, token } = useAuth();
     const { setNewQueue } = usePlayer();
     const { playlists: libraryPlaylists, togglePlaylistInLibrary, refetch } = useLibrary();
+    const extractSignedAudio = (item) => item?.signedAudio || item?.signedUrl || null;
 
     const [playlist, setPlaylist] = useState(null);
     const [items, setItems] = useState([]);
@@ -205,7 +206,7 @@ export default function PlaylistPage() {
     }, [reorderMode, orderDraft, rowBySongId, sortedItems]);
 
     const queueItems = useMemo(() => {
-        return sortedItems
+        return (sortedItems || [])
             .map((row) => {
                 const s = row.song || {};
                 const mapped = mapSongToPlayerItem(s);
@@ -224,10 +225,9 @@ export default function PlaylistPage() {
                     songName: s.songName ?? mapped.title,
                     songID: s.songID ?? mapped.songID,
                     duration: s.duration ?? mapped.duration,
-                    _position: row.position,
                 };
             })
-            .filter((x) => !!x.signedAudio);
+            .filter((x) => !!extractSignedAudio(x)); // <-- ważne
     }, [sortedItems, playlistOwner]);
 
     const queueIndexBySongId = useMemo(() => {
@@ -289,8 +289,8 @@ export default function PlaylistPage() {
         }
     }, [token, isOwner, id, isInLibrary, togglePlaylistInLibrary, showToast, refetch, navigate]);
 
-    const openSongMenu = useCallback((songID, title) => {
-        setActiveSong({ songID, title });
+    const openSongMenu = useCallback((songID, title, opts = {}) => {
+        setActiveSong({ songID, title, hidden: !!opts.hidden });
         setMenuOpen(true);
     }, []);
 
@@ -571,6 +571,8 @@ export default function PlaylistPage() {
         }
     }, [token, playlist?.playlistID, orderDraft, showToast, fetchSongsOnly]);
 
+    const menuDisabled = reorderMode;
+
     // ====== RENDER ======
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
@@ -628,7 +630,7 @@ export default function PlaylistPage() {
                                     type="button"
                                     onClick={submitReport}
                                     style={{
-                                        ...styles.primaryBtn,
+                                        ...styles.reportBtn,
                                         opacity: reportBusy ? 0.6 : 1,
                                         cursor: reportBusy ? "not-allowed" : "pointer",
                                     }}
@@ -797,13 +799,17 @@ export default function PlaylistPage() {
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 songTitle={activeSong?.title}
-                canRemoveFromCurrent={canEdit}
+                canRemoveFromCurrent={true}
                 busy={menuBusy}
-                onAddToPlaylist={() => {
-                    setMenuOpen(false);
-                    setAddOpen(true);
-                }}
                 onRemoveFromCurrent={removeFromThisPlaylist}
+                onAddToPlaylist={
+                    activeSong?.hidden
+                        ? null
+                        : () => {
+                            setMenuOpen(false);
+                            setAddOpen(true);
+                        }
+                }
             />
 
             {/* MODAL: ADD TO PLAYLIST */}
@@ -1050,30 +1056,45 @@ export default function PlaylistPage() {
                 {displayRows.map((row, idx) => {
                     const s = row.song || {};
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
-                    const playable = queueIdx != null;
+
+                    const hidden = !!s?.isHidden || s?.moderationStatus === "HIDDEN";
 
                     const artist = s.creatorName || s?.creator?.user?.userName || playlistOwner || "—";
-
                     const addedAtLabel = formatDateTime(row?.addedAt);
                     const addedByName = row?.addedBy?.userName || null;
 
                     const key = `${row.playlistID}-${row.songID}-${row.position ?? idx}`;
 
+                    const disabledRow = hidden;
+                    const rowStyle = disabledRow
+                        ? { ...(typeof styles.row === "function" ? styles.row(canEdit) : styles.row), ...(styles.rowDisabled || {}), opacity: 0.55 }
+                        : (typeof styles.row === "function" ? styles.row(canEdit) : styles.row);
+
                     return (
-                        <div key={key} style={styles.row(canEdit)}>
+                        <div key={key} style={rowStyle}>
                             <button
                                 type="button"
                                 onClick={() => {
                                     if (reorderMode) return;
-                                    setNewQueue(queueItems, queueIdx ?? 0);
+                                    if (queueIdx == null) return; // brak w kolejce = nieodtwarzalny (hidden/niedostępny)
+                                    setNewQueue(queueItems, queueIdx);
                                 }}
-                                disabled={!playable || reorderMode}
+                                disabled={queueIdx == null || reorderMode}
                                 style={{
                                     ...styles.rowPlayBtn,
-                                    opacity: playable && !reorderMode ? 1 : 0.45,
-                                    cursor: playable && !reorderMode ? "pointer" : "not-allowed",
+                                    opacity: queueIdx != null && !reorderMode ? 1 : 0.45,
+                                    cursor: queueIdx != null && !reorderMode ? "pointer" : "not-allowed",
+                                    pointerEvents: reorderMode ? "none" : "auto", // identycznie jak w albumach
                                 }}
-                                title={reorderMode ? "Tryb zmiany kolejności" : "Odtwórz od tego"}
+                                title={
+                                    reorderMode
+                                        ? "Tryb zmiany kolejności"
+                                        : hidden
+                                            ? "Utwór ukryty przez administrację"
+                                            : queueIdx != null
+                                                ? "Odtwórz od tego"
+                                                : "Utwór niedostępny"
+                                }
                             >
                                 ▶
                             </button>
@@ -1091,20 +1112,31 @@ export default function PlaylistPage() {
                             <div style={styles.trackMain}>
                                 <div style={styles.trackTitle} title={s.songName || "Utwór"}>
                                     {s.songName || "Utwór"}
+                                    {hidden ? (
+                                        <span style={{ opacity: 0.75, marginLeft: 8, fontSize: 12 }}>
+                                (niedostępny)
+                            </span>
+                                    ) : null}
                                 </div>
 
                                 <div style={styles.trackSub} title={artist}>
                                     {artist}
                                     {addedAtLabel ? (
                                         <span style={{ opacity: 0.65 }}>
-                                            {" "}• dodano {addedAtLabel}
+                                {" "}• dodano {addedAtLabel}
                                             {addedByName ? ` • przez ${addedByName}` : ""}
-                                        </span>
+                            </span>
                                     ) : null}
                                 </div>
                             </div>
 
-                            <div style={styles.likeWrap}>
+                            <div
+                                style={{
+                                    ...styles.likeWrap,
+                                    opacity: hidden ? 0.45 : 1,
+                                    pointerEvents: hidden ? "none" : "auto",
+                                }}
+                            >
                                 <LikeButton songID={s.songID} onToast={showToast} />
                             </div>
 
@@ -1118,7 +1150,7 @@ export default function PlaylistPage() {
                                         alignItems: "center",
                                         justifyContent: "center",
                                         justifySelf: "end",
-                                        width: 44, // trzymamy się szerokości kolumny
+                                        width: 44,
                                     }}
                                 >
                                     <button
@@ -1154,15 +1186,28 @@ export default function PlaylistPage() {
                             ) : canEdit ? (
                                 <button
                                     type="button"
-                                    onClick={() => openSongMenu(s.songID, s.songName || "Utwór")}
-                                    style={styles.moreBtn}
-                                    title="Opcje"
+                                    onClick={() => openSongMenu(s.songID, s.songName || "Utwór", { hidden })}
+                                    style={{
+                                        ...styles.moreBtn,
+                                        opacity: menuDisabled ? 0.45 : 1,
+                                        cursor: menuDisabled ? "not-allowed" : "pointer",
+                                        pointerEvents: menuDisabled ? "none" : "auto",
+                                    }}
+                                    disabled={menuDisabled}
+                                    title={
+                                        menuDisabled
+                                            ? "Tryb zmiany kolejności"
+                                            : hidden
+                                                ? "Utwór ukryty (dostępne opcje playlisty)"
+                                                : "Opcje"
+                                    }
                                 >
                                     ⋯
                                 </button>
                             ) : (
                                 <div />
                             )}
+
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
                     );
@@ -1429,6 +1474,30 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         background: "#2a2a2a",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.25)",
+    },
+
+    trackTitleRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        minWidth: 0,
+    },
+
+    badgeHidden: {
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: 0.8,
+        opacity: 0.85,
+        padding: "4px 8px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#151515",
+        flex: "0 0 auto",
     },
 
     miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },

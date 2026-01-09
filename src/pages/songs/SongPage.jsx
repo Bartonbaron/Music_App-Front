@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Music2, Play, ArrowLeft } from "lucide-react";
+import { Music2, Play, ArrowLeft, Flag } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
+import { apiFetch } from "../../api/http";
 import { usePlayer } from "../../contexts/PlayerContext";
 import LikeButton from "../../components/common/LikeButton";
 import { formatTrackDuration } from "../../utils/time";
@@ -15,7 +16,7 @@ export default function SongPage() {
     const { id } = useParams();
     const navigate = useNavigate();
 
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const { setNewQueue, currentItem, isPlaying } = usePlayer();
 
     const [song, setSong] = useState(null);
@@ -28,6 +29,49 @@ export default function SongPage() {
         window.setTimeout(() => setToast(null), 1400);
     }, []);
 
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportReason, setReportReason] = useState("");
+    const [reportBusy, setReportBusy] = useState(false);
+
+    const isOwner = useMemo(() => {
+        const myUserID = user?.userID ?? user?.id ?? null;
+        const songOwnerUserID =
+            song?.creator?.user?.userID ?? song?.creator?.userID ?? null; // na wszelki wypadek
+        if (myUserID == null || songOwnerUserID == null) return false;
+        return String(myUserID) === String(songOwnerUserID);
+    }, [user, song]);
+
+    const submitReport = useCallback(async () => {
+        if (!token || !song?.songID) return;
+
+        const reason = reportReason.trim();
+        if (reason.length < 3) {
+            showToast("Podaj powód (min. 3 znaki)", "error");
+            return;
+        }
+
+        setReportBusy(true);
+        try {
+            await apiFetch("/reports", {
+                token,
+                method: "POST",
+                body: {
+                    contentType: "song",
+                    contentID: Number(song.songID),
+                    reason: reason.slice(0, 255),
+                },
+            });
+
+            showToast("Zgłoszenie wysłane", "success");
+            setReportOpen(false);
+            setReportReason("");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wysłać zgłoszenia", "error");
+        } finally {
+            setReportBusy(false);
+        }
+    }, [token, song?.songID, reportReason, showToast]);
+
     useEffect(() => {
         if (!token || !id) return;
 
@@ -38,16 +82,11 @@ export default function SongPage() {
             setMsg("");
 
             try {
-                const res = await fetch(`http://localhost:3000/api/songs/${id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data?.message || "Failed to fetch song");
-
+                const data = await apiFetch(`/songs/${id}`, { token });
                 if (alive) setSong(data);
             } catch (e) {
-                if (alive) setMsg(e?.message || "Error");
+                if (!alive) return;
+                setMsg(e?.message || "Error");
             } finally {
                 if (alive) setLoading(false);
             }
@@ -123,6 +162,61 @@ export default function SongPage() {
                 </div>
             ) : null}
 
+            {/* MODAL: REPORT SONG */}
+            {reportOpen ? (
+                <div
+                    style={styles.modalOverlay}
+                    onMouseDown={() => {
+                        if (!reportBusy) setReportOpen(false);
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div style={styles.modalCard} onMouseDown={(e) => e.stopPropagation()}>
+                        <div style={styles.modalTitle}>Zgłoś utwór</div>
+
+                        <div style={styles.modalHint}>Opisz krótko powód zgłoszenia (max 255 znaków).</div>
+
+                        <textarea
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value.slice(0, 255))}
+                            placeholder="Np. spam, obraźliwe treści, podszywanie się…"
+                            style={styles.textareaSmall}
+                            disabled={reportBusy}
+                        />
+
+                        <div style={styles.modalFooterRow}>
+                            <div style={styles.counter}>{reportReason.length}/255</div>
+
+                            <div style={{ display: "flex", gap: 10 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setReportOpen(false)}
+                                    style={styles.ghostBtn}
+                                    disabled={reportBusy}
+                                >
+                                    Anuluj
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={submitReport}
+                                    disabled={reportBusy}
+                                    style={{
+                                        ...styles.reportBtn,
+                                        opacity: reportBusy ? 0.65 : 1,
+                                        cursor: reportBusy ? "not-allowed" : "pointer",
+                                    }}
+                                >
+                                    <Flag size={16} style={{ display: "block" }} />
+                                    {reportBusy ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             {/* TOP BAR */}
             <div style={styles.topBar}>
                 <button
@@ -174,7 +268,7 @@ export default function SongPage() {
                                     opacity: playable ? 1 : 0.6,
                                     cursor: playable ? "pointer" : "not-allowed",
                                 }}
-                                title={playable ? "Odtwórz" : "Brak pliku audio"}
+                                title={playable ? "Odtwórz" : "Utwór niedostępny"}
                             >
                                 <Play size={16} style={{ display: "block" }} />
                                 {isNowPlaying ? (isPlaying ? "Odtwarzasz" : "Wznów") : "Odtwórz"}
@@ -185,6 +279,17 @@ export default function SongPage() {
                                 onToast={showToast}
                                 style={styles.likeBtn}
                             />
+
+                            {!isOwner ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setReportOpen(true)}
+                                    style={styles.reportBtnSmall}
+                                    title="Zgłoś utwór"
+                                >
+                                    <Flag size={16} style={{ display: "block" }} />
+                                </button>
+                            ) : null}
                         </div>
                     </div>
 
@@ -356,5 +461,93 @@ const styles = {
         width: 44,
         height: 40,
         borderRadius: 12,
+    },
+
+    modalOverlay: {
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+    },
+
+    modalCard: {
+        width: "min(560px, 100%)",
+        background: "#1e1e1e",
+        border: "1px solid #2a2a2a",
+        borderRadius: 14,
+        padding: 14,
+        boxShadow: "0 18px 50px rgba(0,0,0,0.55)",
+    },
+
+    modalTitle: { fontWeight: 900, fontSize: 16, marginBottom: 10 },
+    modalHint: { opacity: 0.85, fontSize: 13, marginBottom: 10 },
+
+    textareaSmall: {
+        width: "100%",
+        minHeight: 110,
+        resize: "vertical",
+        borderRadius: 12,
+        border: "1px solid #2a2a2a",
+        background: "#121212",
+        color: "white",
+        padding: 12,
+        outline: "none",
+        fontSize: 13,
+        boxSizing: "border-box",
+    },
+
+    modalFooterRow: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginTop: 12,
+        flexWrap: "wrap",
+    },
+
+    counter: { opacity: 0.7, fontSize: 12 },
+
+    ghostBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        fontWeight: 900,
+    },
+
+    reportBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: "1px solid #5a2a2a",
+        background: "#2a1a1a",
+        color: "#ffb4b4",
+        fontWeight: 900,
+    },
+
+    reportBtnSmall: {
+        width: 44,
+        height: 40,
+        borderRadius: 12,
+        border: "1px solid #5a2a2a",
+        background: "#2a1a1a",
+        color: "#ffb4b4",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        fontWeight: 900,
     },
 };

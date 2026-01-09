@@ -68,6 +68,8 @@ export default function PlayerBar() {
         toggleAutoplay,
         playbackMode,
         changePlaybackMode,
+        queue,
+        queueIndex
     } = usePlayer();
 
     console.log("StepBack:", StepBack, "StepForward:", StepForward);
@@ -89,6 +91,22 @@ export default function PlayerBar() {
     const canSeek = !!currentItem && duration > 0;
 
     const percent = duration > 0 ? Math.min(100, Math.max(0, (progress / duration) * 100)) : 0;
+
+    const hasPrev = useMemo(() => {
+        if (!queue?.length || queueIndex == null) return false;
+        for (let i = queueIndex - 1; i >= 0; i--) {
+            if (queue[i]?.signedAudio) return true;
+        }
+        return false;
+    }, [queue, queueIndex]);
+
+    const hasNext = useMemo(() => {
+        if (!queue?.length || queueIndex == null) return false;
+        for (let i = queueIndex + 1; i < queue.length; i++) {
+            if (queue[i]?.signedAudio) return true;
+        }
+        return false;
+    }, [queue, queueIndex]);
 
     return (
         <div style={styles.bar}>
@@ -134,11 +152,11 @@ export default function PlayerBar() {
                 <div style={styles.controls}>
                     {/* Prev */}
                     <button
-                        style={{ ...styles.iconBtn, ...( !currentItem ? styles.disabledBtn : null ) }}
+                        style={{ ...styles.iconBtn, ...( !hasPrev ? styles.disabledBtn : null ) }}
                         onClick={playPrevious}
-                        disabled={!currentItem}
+                        disabled={!hasPrev}
                         title="Poprzedni"
-                        >
+                    >
                         <StepBack size={18} style={{ display: "block" }} stroke="#fff" />
                     </button>
 
@@ -154,9 +172,9 @@ export default function PlayerBar() {
 
                     {/* Next */}
                     <button
-                        style={{ ...styles.iconBtn, ...( !currentItem ? styles.disabledBtn : null ) }}
+                        style={{ ...styles.iconBtn, ...( !hasNext ? styles.disabledBtn : null ) }}
                         onClick={playNext}
-                        disabled={!currentItem}
+                        disabled={!hasNext}
                         title="Następny"
                     >
                         <StepForward size={18} style={{ display: "block" }} stroke="#fff" />

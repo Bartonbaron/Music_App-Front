@@ -11,6 +11,18 @@ import { useAuth } from "./AuthContext";
 
 const PlayerContext = createContext(null);
 
+function findNextPlayable(queue, startIdx, direction = 1, isPlayableFn) {
+    if (!Array.isArray(queue) || !queue.length) return null;
+    if (typeof isPlayableFn !== "function") return null;
+
+    let i = startIdx + direction;
+    while (i >= 0 && i < queue.length) {
+        if (isPlayableFn(queue[i])) return i;
+        i += direction;
+    }
+    return null;
+}
+
 export function PlayerProvider({ children }) {
     const { user, token } = useAuth();
 
@@ -70,14 +82,23 @@ export function PlayerProvider({ children }) {
     const playNextRef = useRef(null);
 
     // helpers
-    const extractSignedAudio = (item) =>
-        item?.signedAudio || item?.signedUrl || item?.audioURL || item?.fileURL || null;
+    const extractSignedAudio = (item) => item?.signedAudio || item?.signedUrl || null;
 
     const extractSignedCover = (item) =>
         item?.signedCover || item?.coverSigned || item?.coverURL || null;
 
     const keyOf = (x) =>
         x?.songID ? `s:${x.songID}` : x?.podcastID ? `p:${x.podcastID}` : null;
+
+    const canPlayItem = useCallback(
+        (x) => {
+            if (!x) return false;
+            if (x?.isHidden) return false;
+            if (x?.moderationStatus === "HIDDEN") return false;
+            return !!extractSignedAudio(x);
+        },
+        []
+    );
 
     // ---------------- STREAM COUNT (10s) ----------------
     const clearStreamTimer = useCallback(() => {
@@ -92,7 +113,8 @@ export function PlayerProvider({ children }) {
             if (!token) return;
             if (!item) return;
 
-            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            const type =
+                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
             if (type !== "song") return;
 
             const songID = item?.songID;
@@ -105,7 +127,7 @@ export function PlayerProvider({ children }) {
                 });
                 // eslint-disable-next-line no-unused-vars
             } catch (_) {
-                /**/
+                /* noop */
             }
         },
         [token]
@@ -139,7 +161,8 @@ export function PlayerProvider({ children }) {
             if (!token) return;
             if (!item) return;
 
-            const type = item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
+            const type =
+                item?.type || (item?.songID ? "song" : item?.podcastID ? "podcast" : null);
             if (!type) return;
 
             const payload =
@@ -164,7 +187,7 @@ export function PlayerProvider({ children }) {
                 });
                 // eslint-disable-next-line no-unused-vars
             } catch (_) {
-                /**/
+                /* noop */
             }
         },
         [token]
@@ -248,18 +271,18 @@ export function PlayerProvider({ children }) {
     }, []);
 
     const applyPlaybackMode = useCallback(
-        (mode, { persist } = { persist: false }) => {
+        (mode, { persist = false } = {}) => {
             if (!["normal", "shuffle", "repeat"].includes(mode)) return;
 
             setPlaybackMode(mode);
             playbackModeRef.current = mode;
 
-            if (persist) {
-                updatePreferences({ playbackMode: mode });
-            }
+            if (persist) updatePreferences({ playbackMode: mode });
 
             setQueue((prevQ) => {
                 if (!prevQ?.length) return prevQ;
+
+                const playableQ = (prevQ || []).filter(canPlayItem);
 
                 const cur = currentItemRef.current;
 
@@ -274,27 +297,32 @@ export function PlayerProvider({ children }) {
 
                 if (mode === "shuffle") {
                     if (!originalQueueRef.current?.length) {
-                        originalQueueRef.current = [...prevQ];
+                        originalQueueRef.current = [...playableQ];
                     }
 
-                    const idx = findIdx(prevQ);
+                    const idx = findIdx(playableQ);
 
                     if (idx < 0) {
-                        const shuffled = shuffleArray(prevQ);
+                        const shuffled = shuffleArray(playableQ);
                         setQueueIndex(0);
                         return shuffled;
                     }
 
-                    const selected = prevQ[idx];
-                    const rest = prevQ.filter((_, i) => i !== idx);
+                    const selected = playableQ[idx];
+                    const rest = playableQ.filter((_, i) => i !== idx);
                     const nextQ = [selected, ...shuffleArray(rest)];
 
                     setQueueIndex(0);
                     return nextQ;
                 }
 
-                // normal / repeat => wróć do oryginalnej
-                const base = originalQueueRef.current?.length ? originalQueueRef.current : prevQ;
+                // normal / repeat
+                const baseRaw = originalQueueRef.current?.length
+                    ? originalQueueRef.current
+                    : playableQ;
+
+                const base = (baseRaw || []).filter(canPlayItem);
+
                 const idx = findIdx(base);
                 setQueueIndex(idx >= 0 ? idx : 0);
                 return base;
@@ -340,6 +368,7 @@ export function PlayerProvider({ children }) {
     const loadItem = useCallback(
         async (item, autoPlay = autoplayRef.current) => {
             const signedAudio = extractSignedAudio(item);
+
             if (!signedAudio) return;
 
             const audio = audioRef.current;
@@ -409,26 +438,24 @@ export function PlayerProvider({ children }) {
         [safePlay, clearStreamTimer]
     );
 
-    // kontrolki kolejki
     const playNext = useCallback(() => {
         setQueueIndex((prev) => {
             const q = queueRef.current;
             if (!q.length) return prev;
 
-            const nextIndex = prev + 1;
+            const targetIdx = findNextPlayable(q, prev, +1, canPlayItem);
 
-            if (nextIndex >= q.length) {
+            if (targetIdx == null) {
                 audioRef.current.pause();
                 setIsPlaying(false);
-
                 clearStreamTimer();
                 return prev;
             }
 
-            loadItem(q[nextIndex], autoplayRef.current);
-            return nextIndex;
+            loadItem(q[targetIdx], autoplayRef.current);
+            return targetIdx;
         });
-    }, [loadItem, clearStreamTimer]);
+    }, [loadItem, clearStreamTimer, canPlayItem]);
 
     const playPrevious = useCallback(() => {
         const audio = audioRef.current;
@@ -452,17 +479,18 @@ export function PlayerProvider({ children }) {
             const q = queueRef.current;
             if (!q.length) return prev;
 
-            const prevIndex = prev - 1;
+            const targetIdx = findNextPlayable(q, prev, -1, canPlayItem);
 
-            if (prevIndex < 0) {
-                loadItem(q[0], autoplayRef.current);
-                return 0;
+            // jeśli nie ma odtwarzalnego w lewo: zostań na bieżącym
+            if (targetIdx == null) {
+                loadItem(q[prev], autoplayRef.current);
+                return prev;
             }
 
-            loadItem(q[prevIndex], autoplayRef.current);
-            return prevIndex;
+            loadItem(q[targetIdx], autoplayRef.current);
+            return targetIdx;
         });
-    }, [loadItem, clearStreamTimer, scheduleStreamAfter10s]);
+    }, [loadItem, clearStreamTimer, scheduleStreamAfter10s, canPlayItem]);
 
     useEffect(() => {
         playNextRef.current = playNext;
@@ -472,7 +500,7 @@ export function PlayerProvider({ children }) {
         (items, startIndex = 0) => {
             if (!Array.isArray(items) || items.length === 0) return;
 
-            const playable = items.filter((x) => !!extractSignedAudio(x));
+            const playable = items.filter(canPlayItem);
             if (!playable.length) return;
 
             const safeIndex = Math.min(Math.max(0, startIndex), items.length - 1);
@@ -484,7 +512,8 @@ export function PlayerProvider({ children }) {
                 ? playable.findIndex((x) => keyOf(x) === selectedKey)
                 : -1;
 
-            const selected = selectedIndexPlayable >= 0 ? playable[selectedIndexPlayable] : playable[0];
+            const selected =
+                selectedIndexPlayable >= 0 ? playable[selectedIndexPlayable] : playable[0];
 
             let finalQueue = [...playable];
 
@@ -492,7 +521,9 @@ export function PlayerProvider({ children }) {
 
             if (playbackModeRef.current === "shuffle") {
                 const selKey = keyOf(selected);
-                const rest = selKey ? finalQueue.filter((x) => keyOf(x) !== selKey) : finalQueue.slice(1);
+                const rest = selKey
+                    ? finalQueue.filter((x) => keyOf(x) !== selKey)
+                    : finalQueue.slice(1);
 
                 finalQueue = [selected, ...shuffleArray(rest)];
 
@@ -502,7 +533,10 @@ export function PlayerProvider({ children }) {
                 return;
             }
 
-            const startIdx = selectedKey ? finalQueue.findIndex((x) => keyOf(x) === selectedKey) : 0;
+            const startIdx = selectedKey
+                ? finalQueue.findIndex((x) => keyOf(x) === selectedKey)
+                : 0;
+
             const idx = startIdx >= 0 ? startIdx : 0;
 
             setQueue(finalQueue);
@@ -552,7 +586,8 @@ export function PlayerProvider({ children }) {
 
             const now = Date.now();
             const recentlySent =
-                historySentKeyRef.current === key && now - historySentAtRef.current < HISTORY_COOLDOWN_MS;
+                historySentKeyRef.current === key &&
+                now - historySentAtRef.current < HISTORY_COOLDOWN_MS;
 
             if (recentlySent) {
                 historyStartedOnceRef.current = true;
@@ -571,11 +606,21 @@ export function PlayerProvider({ children }) {
             clearStreamTimer();
         };
 
+        const onError = () => {
+            clearStreamTimer();
+            countedStreamKeyRef.current = null;
+            setIsPlaying(false);
+
+            // spróbuj przejść do następnego playable
+            playNextRef.current?.();
+        };
+
         audio.addEventListener("timeupdate", onTimeUpdate);
         audio.addEventListener("loadedmetadata", onLoadedMetadata);
         audio.addEventListener("ended", onEnded);
         audio.addEventListener("play", onPlay);
         audio.addEventListener("pause", onPause);
+        audio.addEventListener("error", onError);
 
         return () => {
             audio.removeEventListener("timeupdate", onTimeUpdate);
@@ -583,6 +628,7 @@ export function PlayerProvider({ children }) {
             audio.removeEventListener("ended", onEnded);
             audio.removeEventListener("play", onPlay);
             audio.removeEventListener("pause", onPause);
+            audio.removeEventListener("error", onError);
         };
     }, [safePlay, clearStreamTimer, scheduleStreamAfter10s, sendHistory]);
 

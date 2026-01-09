@@ -32,8 +32,9 @@ export async function apiFetch(path, { token, method = "GET", body } = {}) {
     }
 
     if (!res.ok) {
-        throw new Error(data?.message || "Request failed");
+        const err = new Error(data?.message || "Request failed");
+        err.data = data;
+        throw err;
     }
-
     return data;
 }

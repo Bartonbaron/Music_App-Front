@@ -16,6 +16,7 @@ export default function Sidebar() {
         return (albums || []).map((a) => ({
             key: `a-${a.albumID}`,
             title: a.albumName || "Album",
+            sub: a.creatorName || "—",
             cover: a.signedCover || null,
             href: `/albums/${a.albumID}`,
             isActive: location.pathname === `/albums/${a.albumID}`,
@@ -26,7 +27,7 @@ export default function Sidebar() {
         return (playlists || []).map((p) => ({
             key: `p-${p.playlistID}`,
             title: p.playlistName || "Playlista",
-            sub: p?.user?.userName || p.creatorName || "—",
+            sub: p.creatorName || p?.user?.userName || "—",
             cover: p.signedCover || null,
             href: `/playlists/${p.playlistID}`,
             isActive: location.pathname === `/playlists/${p.playlistID}`,

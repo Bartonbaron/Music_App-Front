@@ -15,11 +15,82 @@ function pickRoleName(user) {
     return user?.role?.roleName || user?.roleName || user?.role || "";
 }
 
+function normalizePlaylist(p) {
+    if (!p) return null;
+
+    return {
+        playlistID: p?.playlistID ?? p?.id ?? null,
+        playlistName: p?.playlistName ?? p?.name ?? "Playlista",
+        signedCover: p?.signedCover || null,
+        coverURL: p?.coverURL || null,
+
+        creatorName: p?.creatorName || p?.user?.userName || null,
+        user: p?.user ? { userID: p.user.userID, userName: p.user.userName } : null,
+
+        visibility: p?.visibility ?? null,
+        moderationStatus: p?.moderationStatus ?? null,
+
+        createdAt: p?.createdAt ?? null,
+        addedAt: p?.addedAt ?? null,
+    };
+}
+
+function normalizeFavSongRow(row) {
+    if (!row) return null;
+
+    const s = row?.song || row;
+
+    if (!s) return null;
+
+    return {
+        addedAt: row?.addedAt ?? s?.addedAt ?? null,
+
+        songID: s?.songID ?? s?.id ?? null,
+        songName: s?.songName ?? s?.title ?? "Utwór",
+        duration: s?.duration ?? null,
+
+        creatorName: s?.creatorName || s?.creator?.user?.userName || null,
+
+        signedAudio: s?.signedAudio || null,
+        signedCover: s?.signedCover || null,
+        effectiveCover: s?.effectiveCover || s?.signedCover || s?.album?.signedCover || null,
+
+        album: s?.album
+            ? {
+                albumID: s.album.albumID,
+                albumName: s.album.albumName,
+                signedCover: s.album.signedCover || null,
+            }
+            : null,
+    };
+}
+
+function normalizeFavPodcastRow(row) {
+    if (!row) return null;
+
+    const p = row?.podcast || row;
+    if (!p) return null;
+
+    return {
+        addedAt: row?.addedAt ?? p?.addedAt ?? null,
+
+        podcastID: p?.podcastID ?? p?.id ?? null,
+        title: p?.title ?? p?.podcastName ?? "Podcast",
+        duration: p?.duration ?? null,
+
+        creatorName: p?.creatorName || p?.creator?.user?.userName || null,
+
+        signedAudio: p?.signedAudio || null,
+        signedCover: p?.signedCover || null,
+    };
+}
+
 function normalizeAlbum(a) {
     return {
         albumID: a?.albumID ?? a?.id ?? null,
         albumName: a?.albumName ?? a?.name ?? "Album",
         signedCover: a?.signedCover || a?.albumSignedCover || a?.coverSigned || null,
+        creatorName: a?.creatorName || a?.creator?.user?.userName || null,
         createdAt: a?.createdAt || null,
         _source: a?._source || "unknown",
     };
@@ -61,7 +132,6 @@ export function LibraryProvider({ children }) {
     const refetch = useCallback(async () => {
         if (!token) return;
 
-        // cancel poprzedniego requestu
         try {
             abortRef.current?.abort();
             // eslint-disable-next-line no-unused-vars
@@ -94,6 +164,7 @@ export function LibraryProvider({ children }) {
                     signal: ac.signal,
                 }),
             ];
+
             if (isCreatorRole) {
                 requests.push(
                     fetch("http://localhost:3000/api/creators/me", {
@@ -117,39 +188,44 @@ export function LibraryProvider({ children }) {
             const playlistsData = await playlistsRes.json().catch(() => ({}));
             const myCreatorData = myCreatorRes ? await myCreatorRes.json().catch(() => ({})) : null;
 
-            if (!likedRes.ok) {
-                throw new Error(likedData?.message || "Failed to fetch liked songs");
-            }
-            if (!favPodsRes.ok) {
-                throw new Error(favPodsData?.message || "Failed to fetch favorite podcasts");
-            }
-            if (!albumsRes.ok) {
-                throw new Error(albumsData?.message || "Failed to fetch library albums");
-            }
-            if (!playlistsRes.ok) {
-                throw new Error(playlistsData?.message || "Failed to fetch library playlists");
-            }
-            if (myCreatorRes && !myCreatorRes.ok) {
-                throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
-            }
+            if (!likedRes.ok) throw new Error(likedData?.message || "Failed to fetch liked songs");
+            if (!favPodsRes.ok) throw new Error(favPodsData?.message || "Failed to fetch favorite podcasts");
+            if (!albumsRes.ok) throw new Error(albumsData?.message || "Failed to fetch library albums");
+            if (!playlistsRes.ok) throw new Error(playlistsData?.message || "Failed to fetch library playlists");
+            if (myCreatorRes && !myCreatorRes.ok) throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
 
-            // --- favorites ---
-            setFavoriteSongs(Array.isArray(likedData) ? likedData : likedData.songs || []);
-            setFavoritePodcasts(Array.isArray(favPodsData) ? favPodsData : favPodsData.podcasts || []);
+            // LIKED SONGS
+            const likedRaw = Array.isArray(likedData) ? likedData : likedData?.songs || [];
+            const likedNorm = (likedRaw || [])
+                .map(normalizeFavSongRow)
+                .filter((x) => x?.songID != null);
 
-            // --- playlists ---
-            setPlaylists(Array.isArray(playlistsData) ? playlistsData : playlistsData.playlists || []);
+            setFavoriteSongs(likedNorm);
 
-            // --- albums (merge library + creator albums) ---
-            const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData.albums || [];
+            // FAVORITE PODCASTS
+            const podsRaw = Array.isArray(favPodsData) ? favPodsData : favPodsData?.podcasts || [];
+            const podsNorm = (podsRaw || [])
+                .map(normalizeFavPodcastRow)
+                .filter((x) => x?.podcastID != null);
+
+            setFavoritePodcasts(podsNorm);
+
+            // PLAYLISTS
+            const playlistsRaw = Array.isArray(playlistsData) ? playlistsData : playlistsData?.playlists || [];
+            const playlistsNorm = (playlistsRaw || [])
+                .map(normalizePlaylist)
+                .filter((p) => p?.playlistID != null);
+
+            setPlaylists(playlistsNorm);
+
+            // ALBUMS (merge library + creator albums)
+            const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData?.albums || [];
             const creatorAlbumsRaw = myCreatorData?.albums || [];
 
-            const libraryAlbums = (libraryAlbumsRaw || []).map((a) => ({ ...a, _source: "library" }));
-            const creatorAlbums = (creatorAlbumsRaw || []).map((a) => ({ ...a, _source: "creator" }));
+            const libraryAlbums = (libraryAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "library" }));
+            const creatorAlbums = (creatorAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "creator" }));
 
-            const mergedAlbums = isCreatorRole
-                ? mergeAlbumsUnique(libraryAlbums, creatorAlbums)
-                : libraryAlbums;
+            const mergedAlbums = isCreatorRole ? mergeAlbumsUnique(libraryAlbums, creatorAlbums) : libraryAlbums;
 
             setAlbums(mergedAlbums);
         } catch (e) {

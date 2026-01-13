@@ -5,7 +5,7 @@ export async function fetchPlayHistory(token) {
         headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.message || "Failed to fetch play history");
+    if (!res.ok) throw new Error(data?.message || "Failed to fetch play player");
     return data; // { count, items }
 }
 
@@ -20,7 +20,7 @@ export async function addToPlayHistory(token, payload) {
         body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.message || "Failed to add to history");
+    if (!res.ok) throw new Error(data?.message || "Failed to add to player");
     return data;
 }
 
@@ -30,6 +30,6 @@ export async function clearPlayHistory(token) {
         headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.message || "Failed to clear history");
+    if (!res.ok) throw new Error(data?.message || "Failed to clear player");
     return data;
 }

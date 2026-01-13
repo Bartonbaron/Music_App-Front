@@ -4,12 +4,17 @@ import { Heart, Play } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
 import { formatTrackDuration, formatTotalDuration } from "../utils/time.js";
+import SongActionsModal from "../components/common/SongActionsModal";
+import { addSongToQueue } from "../api/queue.api";
+import { useAuth } from "../contexts/AuthContext";
+import AddToPlaylistModal from "../components/common/AddToPlaylistModal";
 
 function pickSongCover(song) {
     return (
-        song?.album?.signedCover ||
+        // song?.album?.signedCover ||
+        // song?.album?.coverURL ||
         song?.signedCover ||
-        song?.effectiveCover ||
+        song?.coverURL ||
         null
     );
 }
@@ -20,6 +25,12 @@ export default function LikedSongsPage() {
 
     const [toast, setToast] = useState(null);
     const [likingId, setLikingId] = useState(null);
+    const { token } = useAuth();
+
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activeSong, setActiveSong] = useState(null);
+    const [menuBusy, setMenuBusy] = useState(false);
+    const [addOpen, setAddOpen] = useState(false);
 
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
@@ -85,6 +96,38 @@ export default function LikedSongsPage() {
         },
         [toggleSongLike, likedSongIds, showToast]
     );
+
+    const handleAddToQueue = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "END");
+            showToast?.("Dodano do kolejki", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd dodawania do kolejki", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast]);
+
+    const handlePlayNext = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "NEXT");
+            showToast?.("Ustawiono jako następny", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd ustawiania następnego", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast]);
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (error) return <div style={styles.page}>{error}</div>;
@@ -209,8 +252,8 @@ export default function LikedSongsPage() {
                                     {s.songName || "Utwór"}
                                     {!playable ? (
                                         <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>
-                                (niedostępny)
-                            </span>
+                                        (niedostępny)
+                                    </span>
                                     ) : null}
                                 </div>
                                 <div style={styles.trackSub}>{s.creatorName || "—"}</div>
@@ -232,11 +275,58 @@ export default function LikedSongsPage() {
                                 />
                             </button>
 
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!playable) return;
+                                    setActiveSong({
+                                        type: "song",
+                                        songID: s.songID,
+                                        title: s.songName || "Utwór",
+                                    });
+                                    setMenuOpen(true);
+                                }}
+                                disabled={!playable}
+                                style={{
+                                    ...styles.moreBtn,
+                                    opacity: playable ? 1 : 0.45,
+                                    cursor: playable ? "pointer" : "not-allowed",
+                                }}
+                                title="Więcej"
+                            >
+                                ⋯
+                            </button>
+
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
                     );
                 })}
             </div>
+
+            {/* MODAL: SONG MENU (liked songs) */}
+            <SongActionsModal
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                songTitle={activeSong?.title}
+                canRemoveFromCurrent={false}
+                busy={menuBusy}
+                onAddToPlaylist={() => {
+                    setMenuOpen(false);
+                    setAddOpen(true);
+                }}
+                onRemoveFromCurrent={null}
+                onAddToQueue={handleAddToQueue}
+                onPlayNext={handlePlayNext}
+            />
+
+            {/* MODAL: ADD TO PLAYLIST */}
+            <AddToPlaylistModal
+                open={addOpen}
+                onClose={() => setAddOpen(false)}
+                songID={activeSong?.songID}
+                songTitle={activeSong?.title}
+                onToast={showToast}
+            />
         </div>
     );
 }
@@ -305,7 +395,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 44px 40px 1fr 44px 60px",
+        gridTemplateColumns: "44px 44px 40px 1fr 44px 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -353,6 +443,37 @@ const styles = {
         justifyContent: "center",
         padding: 0,
         lineHeight: 0,
+    },
+
+    moreBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        lineHeight: 0,
+        fontWeight: 900,
+        fontSize: 18,
+    },
+
+    menuBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "#fff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        lineHeight: 0,
+        fontWeight: 900,
     },
 
     trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },

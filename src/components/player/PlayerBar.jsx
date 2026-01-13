@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { usePlayer } from "../../contexts/PlayerContext";
+import { useNavigate } from "react-router-dom";
 import {
     Play,
     Pause,
@@ -11,6 +12,8 @@ import {
     Music2,
     Mic2,
     Volume2,
+    History,
+    ListOrdered
 } from "lucide-react";
 
 function formatTime(sec) {
@@ -52,6 +55,9 @@ function modeBtnStyle(active, disabled) {
 }
 
 export default function PlayerBar() {
+
+    const navigate = useNavigate();
+
     const {
         currentItem,
         isPlaying,
@@ -92,13 +98,7 @@ export default function PlayerBar() {
 
     const percent = duration > 0 ? Math.min(100, Math.max(0, (progress / duration) * 100)) : 0;
 
-    const hasPrev = useMemo(() => {
-        if (!queue?.length || queueIndex == null) return false;
-        for (let i = queueIndex - 1; i >= 0; i--) {
-            if (queue[i]?.signedAudio) return true;
-        }
-        return false;
-    }, [queue, queueIndex]);
+    const hasPrev = !!currentItem;
 
     const hasNext = useMemo(() => {
         if (!queue?.length || queueIndex == null) return false;
@@ -245,6 +245,31 @@ export default function PlayerBar() {
 
             {/* RIGHT */}
             <div style={styles.right}>
+                <button
+                    onClick={() => navigate("/queue")}
+                    title="Kolejka odtwarzania"
+                    style={{
+                        ...styles.iconBtn,
+                        opacity: currentItem ? 1 : 0.6,
+                        cursor: "pointer",
+                    }}
+                    type="button"
+                >
+                    <ListOrdered size={16} />
+                </button>
+                <button
+                    onClick={() => navigate("/history")}
+                    title="Historia odtwarzania"
+                    style={{
+                        ...styles.iconBtn,
+                        opacity: currentItem ? 1 : 0.6,
+                        cursor: "pointer",
+                    }}
+                    type="button"
+                >
+                    <History size={16} />
+                </button>
+
                 <Volume2 size={16} style={{ opacity: 0.8 }} />
 
                 <input

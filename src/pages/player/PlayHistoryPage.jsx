@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock, Play } from "lucide-react";
+import { History, Play } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter";
@@ -49,12 +49,19 @@ export default function PlayHistoryPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data?.message || "Failed to fetch history");
+            if (!res.ok) throw new Error(data?.message || "Failed to fetch player");
 
             const normalized = (data?.items || [])
-                .map(mapHistoryToPlayerItem)
-                .filter(Boolean)
-                .filter((x) => !!x.signedAudio);
+                .map((row) => {
+                    const mapped = mapHistoryToPlayerItem(row);
+                    if (!mapped) return null;
+
+                    return {
+                        ...mapped,
+                        isHidden: !!row?.isHidden,
+                    };
+                })
+                .filter(Boolean);
 
             setItems(normalized);
         } catch (e) {
@@ -73,7 +80,7 @@ export default function PlayHistoryPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data?.message || "Failed to clear history");
+            if (!res.ok) throw new Error(data?.message || "Failed to clear player");
             setItems([]);
         } catch (e) {
             setError(e.message);
@@ -86,24 +93,27 @@ export default function PlayHistoryPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
-    const canPlayAll = items.length > 0;
+    const playableItems = useMemo(
+        () => (items || []).filter((x) => !!x?.signedAudio && !x?.isHidden),
+        [items]
+    );
+    const canPlayAll = playableItems.length > 0;
 
     const totalDuration = useMemo(() => {
         let sum = 0;
-        for (const it of items) {
+        for (const it of playableItems) {
             const d = it?.raw?.duration;
             if (Number.isFinite(d)) sum += d;
         }
         return sum;
-    }, [items]);
+    }, [playableItems]);
 
     return (
         <div style={styles.page}>
             <div style={styles.headerRow}>
                 <div style={styles.headerLeft}>
                     <div style={styles.heroCover}>
-                        {/* ważne: globalny css lucide ustawia 1em, więc wymuszamy rozmiar inline */}
-                        <Clock
+                        <History
                             strokeWidth={2.2}
                             style={{
                                 width: 64,
@@ -132,9 +142,9 @@ export default function PlayHistoryPage() {
                                     cursor: canPlayAll ? "pointer" : "not-allowed",
                                 }}
                                 disabled={!canPlayAll}
-                                onClick={() => setNewQueue(items, 0)}
+                                onClick={() => setNewQueue(playableItems, 0)}
                             >
-                                ▶ Odtwórz wszystko
+                                <Play size={16} style={{ display: "block" }} /> Odtwórz wszystko
                             </button>
 
                             <button style={styles.secondaryBtn} onClick={refetch} disabled={loading}>
@@ -161,60 +171,98 @@ export default function PlayHistoryPage() {
                 <div style={{ opacity: 0.75 }}>Brak historii odtwarzania.</div>
             ) : (
                 <div style={styles.list}>
-                    {items.map((it, idx) => (
-                        <div
-                            key={`${it.type}-${it.songID || it.podcastID}-${it.historyID || idx}`}
-                            style={styles.row}
-                            onClick={() => setNewQueue(items, idx)} // klik w wiersz = "odtwórz od tego"
-                            role="button"
-                            tabIndex={0}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") setNewQueue(items, idx);
-                            }}
-                            title="Kliknij, aby odtworzyć od tego miejsca"
-                        >
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowCover}>
-                                    {it.signedCover ? (
-                                        <img src={it.signedCover} alt="" style={styles.coverImg} />
-                                    ) : (
-                                        <div style={styles.coverPlaceholder} />
-                                    )}
-                                </div>
+                    {items.map((it, idx) => {
+                        const hidden = !!it.isHidden;
+                        const canPlay = !!it?.signedAudio && !hidden;
 
-                                <div style={styles.rowMeta}>
-                                    <div style={styles.rowTitle} title={it.title}>
-                                        {it.title}
+                        const rowStyle = {
+                            ...styles.row,
+                            opacity: canPlay ? 1 : 0.45,
+                            cursor: canPlay ? "pointer" : "not-allowed",
+                        };
+
+                        const playTitle = hidden
+                            ? (it.type === "podcast"
+                                ? "Podcast ukryty przez administrację"
+                                : "Utwór ukryty przez administrację")
+                            : canPlay
+                                ? "Odtwórz od tego"
+                                : (it.type === "podcast" ? "Podcast niedostępny" : "Utwór niedostępny");
+
+                        const rowTitle = canPlay
+                            ? "Kliknij, aby odtworzyć od tego miejsca"
+                            : playTitle;
+
+                        return (
+                            <div
+                                key={`${it.type}-${it.songID || it.podcastID}-${it.historyID || idx}`}
+                                style={rowStyle}
+                                onClick={() => {
+                                    if (!canPlay) return;
+                                    setNewQueue(items, idx);
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                    if (!canPlay) return;
+                                    if (e.key === "Enter" || e.key === " ") setNewQueue(items, idx);
+                                }}
+                                title={rowTitle}
+                            >
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowCover}>
+                                        {it.signedCover ? (
+                                            <img src={it.signedCover} alt="" style={styles.coverImg} />
+                                        ) : (
+                                            <div style={styles.coverPlaceholder} />
+                                        )}
                                     </div>
 
-                                    <div style={styles.rowSub} title={it.creatorName || ""}>
-                    <span style={{ opacity: 0.9 }}>
-                      {it.type === "podcast" ? "Podcast" : "Utwór"}
-                    </span>
-                                        {it.creatorName ? <span> • {it.creatorName}</span> : null}
-                                        <span style={{ opacity: 0.65 }}> • {formatPlayedAt(it.playedAt)}</span>
+                                    <div style={styles.rowMeta}>
+                                        <div style={styles.rowTitle} title={it.title}>
+                                            {it.title}
+                                        </div>
+
+                                        <div style={styles.rowSub} title={it.creatorName || ""}>
+                                            <span style={{ opacity: 0.9 }}>
+                                                {it.type === "podcast" ? "Podcast" : "Utwór"}
+                                            </span>
+                                            {it.creatorName ? <span> • {it.creatorName}</span> : null}
+                                            <span style={{ opacity: 0.65 }}> • {formatPlayedAt(it.playedAt)}</span>
+
+                                            {!canPlay ? (
+                                                <span style={{ opacity: 0.7 }}>
+                                                    {hidden ? " • ukryty" : " • niedostępny"}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div style={styles.rowRight}>
-                                <button
-                                    style={styles.rowBtn}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setNewQueue(items, idx);
-                                    }}
-                                    title="Odtwórz od tego"
-                                >
-                                    <Play size={16} />
-                                </button>
+                                <div style={styles.rowRight}>
+                                    <button
+                                        style={{
+                                            ...styles.rowBtn,
+                                            opacity: canPlay ? 1 : 0.45,
+                                            cursor: canPlay ? "pointer" : "not-allowed",
+                                        }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!canPlay) return;
+                                            setNewQueue(items, idx);
+                                        }}
+                                        title={playTitle}
+                                        disabled={!canPlay}
+                                        type="button"
+                                    >
+                                        <Play size={16} />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
-
-            {/* żeby lista nie wchodziła pod PlayerBar */}
             <div style={{ height: 120 }} />
         </div>
     );
@@ -250,14 +298,19 @@ const styles = {
     actions: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
 
     primaryBtn: {
-        padding: "10px 14px",
-        borderRadius: 12,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 10,
         border: "none",
         background: "#1db954",
         color: "#000",
         fontWeight: 900,
         cursor: "pointer",
     },
+
     secondaryBtn: {
         padding: "10px 14px",
         borderRadius: 12,

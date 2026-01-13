@@ -11,13 +11,10 @@ import { useAuth } from "./AuthContext";
 
 const PlayerContext = createContext(null);
 
-function findNextPlayable(queue, startIdx, direction = 1, isPlayableFn) {
-    if (!Array.isArray(queue) || !queue.length) return null;
-    if (typeof isPlayableFn !== "function") return null;
-
+function findNextPlayable(queue, startIdx, direction, canPlay) {
     let i = startIdx + direction;
     while (i >= 0 && i < queue.length) {
-        if (isPlayableFn(queue[i])) return i;
+        if (canPlay(queue[i])) return i;
         i += direction;
     }
     return null;
@@ -40,15 +37,53 @@ export function PlayerProvider({ children }) {
     const historyStartedOnceRef = useRef(false);
     const HISTORY_COOLDOWN_MS = 5 * 60 * 1000;
 
+    // --- SERVER QUEUE (backend /api/queue) ---
+    const [serverQueue, setServerQueue] = useState([]);
+    const serverQueueRef = useRef([]);
+    useEffect(() => {
+        serverQueueRef.current = serverQueue;
+    }, [serverQueue]);
+
+    // upNextQueue (lokalna)
+    const [upNextQueue, setUpNextQueue] = useState([]);
+    const upNextQueueRef = useRef([]);
+    useEffect(() => {
+        upNextQueueRef.current = upNextQueue;
+    }, [upNextQueue]);
+
+    // baseQueue = album/playlist/historia
+    const [baseQueue, setBaseQueue] = useState([]);
+    const [baseQueueIndex, setBaseQueueIndex] = useState(0);
+
+    const baseQueueRef = useRef([]);
+    useEffect(() => {
+        baseQueueRef.current = baseQueue;
+    }, [baseQueue]);
+
+    const baseQueueIndexRef = useRef(0);
+    useEffect(() => {
+        baseQueueIndexRef.current = baseQueueIndex;
+    }, [baseQueueIndex]);
+
     // stan odtwarzacza
     const [currentItem, setCurrentItem] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
 
-    // kolejka
-    const [queue, setQueue] = useState([]);
-    const [queueIndex, setQueueIndex] = useState(0);
+    // "server" | "upnext" | "base"
+    const currentSourceRef = useRef("base");
+
+    // shuffle: oryginalna base kolejność
+    const originalBaseQueueRef = useRef([]);
+
+    // ostatni indeks z baseQueue (dla cofania z server/upNext)
+    const lastBaseIndexRef = useRef(0);
+    useEffect(() => {
+        if (currentSourceRef.current === "base") {
+            lastBaseIndexRef.current = baseQueueIndex;
+        }
+    }, [baseQueueIndex]);
 
     const PREV_RESTART_THRESHOLD = 2;
 
@@ -56,12 +91,6 @@ export function PlayerProvider({ children }) {
     const [volume, setVolume] = useState(1);
     const [playbackMode, setPlaybackMode] = useState("normal"); // normal | shuffle | repeat
     const [autoplay, setAutoplay] = useState(true);
-
-    // refs
-    const queueRef = useRef([]);
-    useEffect(() => {
-        queueRef.current = queue;
-    }, [queue]);
 
     const autoplayRef = useRef(true);
     useEffect(() => {
@@ -78,11 +107,11 @@ export function PlayerProvider({ children }) {
         playbackModeRef.current = playbackMode;
     }, [playbackMode]);
 
-    const originalQueueRef = useRef([]);
     const playNextRef = useRef(null);
 
     // helpers
-    const extractSignedAudio = (item) => item?.signedAudio || item?.signedUrl || null;
+    const extractSignedAudio = (item) =>
+        item?.signedAudio || item?.signedUrl || item?.audioURL || item?.fileURL || null;
 
     const extractSignedCover = (item) =>
         item?.signedCover || item?.coverSigned || item?.coverURL || null;
@@ -90,15 +119,165 @@ export function PlayerProvider({ children }) {
     const keyOf = (x) =>
         x?.songID ? `s:${x.songID}` : x?.podcastID ? `p:${x.podcastID}` : null;
 
-    const canPlayItem = useCallback(
-        (x) => {
-            if (!x) return false;
-            if (x?.isHidden) return false;
-            if (x?.moderationStatus === "HIDDEN") return false;
-            return !!extractSignedAudio(x);
+    const canPlayItem = useCallback((x) => {
+        if (!x) return false;
+        if (x?.isHidden) return false;
+        if (x?.moderationStatus === "HIDDEN") return false;
+        return !!extractSignedAudio(x);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // --- map server queue row -> player item (ważne: queueID) ---
+    const mapQueueRowToPlayerItem = useCallback((row) => {
+        if (!row) return null;
+
+        if (row.type === "song" && row.song) {
+            const s = row.song;
+            return {
+                type: "song",
+                queueID: row.queueID,
+                songID: s.songID,
+                songName: s.songName,
+                creatorName: s.creatorName || s?.creator?.user?.userName || null,
+                duration: s.duration,
+                signedAudio: row.signedAudio || null,
+                signedCover: row.signedCover || null,
+                moderationStatus: s.moderationStatus,
+                isHidden: s.moderationStatus === "HIDDEN",
+                raw: s,
+            };
+        }
+
+        if (row.type === "podcast" && row.podcast) {
+            const p = row.podcast;
+            return {
+                type: "podcast",
+                queueID: row.queueID,
+                podcastID: p.podcastID,
+                title: p.title || p.podcastName || `Podcast ${p.podcastID}`,
+                creatorName: p.creatorName || p?.creator?.user?.userName || null,
+                duration: p.duration,
+                signedAudio: row.signedAudio || null,
+                signedCover: row.signedCover || null,
+
+                // podcast zwykle nie ma moderationStatus -> NIE blokujemy przez to
+                moderationStatus: p.moderationStatus,
+                isHidden: p.moderationStatus === "HIDDEN",
+
+                raw: p,
+            };
+        }
+
+        return null;
+    }, []);
+
+    // --- SERVER QUEUE API ---
+    const refetchServerQueue = useCallback(async () => {
+        if (!token) {
+            setServerQueue([]);
+            return;
+        }
+        try {
+            const res = await fetch("http://localhost:3000/api/queue", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.message || "Failed to fetch queue");
+
+            const normalized = (data?.items || [])
+                .map(mapQueueRowToPlayerItem)
+                .filter(Boolean);
+
+            setServerQueue(normalized);
+        } catch (e) {
+            console.warn("refetchServerQueue error:", e?.message || e);
+        }
+    }, [token, mapQueueRowToPlayerItem]);
+
+    const removeServerQueueItem = useCallback(
+        async (queueID) => {
+            if (!token || !queueID) return;
+            try {
+                await fetch(`http://localhost:3000/api/queue/${queueID}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                // eslint-disable-next-line no-unused-vars
+            } catch (_) {
+                /* noop */
+            }
         },
-        []
+        [token]
     );
+
+    const clearServerQueue = useCallback(async () => {
+        if (!token) return;
+        try {
+            await fetch("http://localhost:3000/api/queue", {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setServerQueue([]);
+            // eslint-disable-next-line no-unused-vars
+        } catch (_) {
+            /* noop */
+        }
+    }, [token]);
+
+    // enqueue do backendu (mode: END | NEXT)
+    const enqueueServer = useCallback(
+        async ({ songID, podcastID, mode }) => {
+            if (!token) return;
+
+            const body = {
+                mode: mode || "END",
+                songID: songID != null ? Number(songID) : undefined,
+                podcastID: podcastID != null ? Number(podcastID) : undefined,
+            };
+
+            try {
+                const res = await fetch("http://localhost:3000/api/queue", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data?.message || "Failed to add to queue");
+
+                await refetchServerQueue();
+                return data;
+            } catch (e) {
+                console.warn("enqueueServer error:", e?.message || e);
+                return { success: false, message: e?.message || "Failed" };
+            }
+        },
+        [token, refetchServerQueue]
+    );
+
+    const enqueueServerEndSong = useCallback(
+        (songID) => enqueueServer({ songID, mode: "END" }),
+        [enqueueServer]
+    );
+    const enqueueServerNextSong = useCallback(
+        (songID) => enqueueServer({ songID, mode: "NEXT" }),
+        [enqueueServer]
+    );
+    const enqueueServerEndPodcast = useCallback(
+        (podcastID) => enqueueServer({ podcastID, mode: "END" }),
+        [enqueueServer]
+    );
+    const enqueueServerNextPodcast = useCallback(
+        (podcastID) => enqueueServer({ podcastID, mode: "NEXT" }),
+        [enqueueServer]
+    );
+
+    useEffect(() => {
+        if (!token) return;
+        refetchServerQueue();
+    }, [token, refetchServerQueue]);
 
     // ---------------- STREAM COUNT (10s) ----------------
     const clearStreamTimer = useCallback(() => {
@@ -226,10 +405,12 @@ export function PlayerProvider({ children }) {
         setDuration(0);
         setCurrentItem(null);
 
-        setQueue([]);
-        setQueueIndex(0);
+        setBaseQueue([]);
+        setBaseQueueIndex(0);
+        setUpNextQueue([]);
+        setServerQueue([]);
 
-        originalQueueRef.current = [];
+        originalBaseQueueRef.current = [];
 
         clearStreamTimer();
         countedStreamKeyRef.current = null;
@@ -279,11 +460,10 @@ export function PlayerProvider({ children }) {
 
             if (persist) updatePreferences({ playbackMode: mode });
 
-            setQueue((prevQ) => {
+            setBaseQueue((prevQ) => {
                 if (!prevQ?.length) return prevQ;
 
-                const playableQ = (prevQ || []).filter(canPlayItem);
-
+                const filteredQ = prevQ.filter(canPlayItem);
                 const cur = currentItemRef.current;
 
                 const findIdx = (arr) => {
@@ -296,39 +476,37 @@ export function PlayerProvider({ children }) {
                 };
 
                 if (mode === "shuffle") {
-                    if (!originalQueueRef.current?.length) {
-                        originalQueueRef.current = [...playableQ];
+                    if (!originalBaseQueueRef.current?.length) {
+                        originalBaseQueueRef.current = [...filteredQ];
                     }
 
-                    const idx = findIdx(playableQ);
+                    const idx = findIdx(filteredQ);
 
                     if (idx < 0) {
-                        const shuffled = shuffleArray(playableQ);
-                        setQueueIndex(0);
+                        const shuffled = shuffleArray(filteredQ);
+                        setBaseQueueIndex(0);
                         return shuffled;
                     }
 
-                    const selected = playableQ[idx];
-                    const rest = playableQ.filter((_, i) => i !== idx);
+                    const selected = filteredQ[idx];
+                    const rest = filteredQ.filter((_, i) => i !== idx);
                     const nextQ = [selected, ...shuffleArray(rest)];
 
-                    setQueueIndex(0);
+                    setBaseQueueIndex(0);
                     return nextQ;
                 }
 
-                // normal / repeat
-                const baseRaw = originalQueueRef.current?.length
-                    ? originalQueueRef.current
-                    : playableQ;
+                const baseRaw = originalBaseQueueRef.current?.length
+                    ? originalBaseQueueRef.current
+                    : filteredQ;
 
-                const base = (baseRaw || []).filter(canPlayItem);
-
+                const base = baseRaw.filter(canPlayItem);
                 const idx = findIdx(base);
-                setQueueIndex(idx >= 0 ? idx : 0);
+                setBaseQueueIndex(idx >= 0 ? idx : 0);
                 return base;
             });
         },
-        [updatePreferences]
+        [updatePreferences, canPlayItem]
     );
 
     const setPlaybackModePref = useCallback(
@@ -367,9 +545,16 @@ export function PlayerProvider({ children }) {
 
     const loadItem = useCallback(
         async (item, autoPlay = autoplayRef.current) => {
-            const signedAudio = extractSignedAudio(item);
+            if (!canPlayItem(item)) {
+                playNextRef.current?.();
+                return;
+            }
 
-            if (!signedAudio) return;
+            const signedAudio = extractSignedAudio(item);
+            if (!signedAudio) {
+                playNextRef.current?.();
+                return;
+            }
 
             const audio = audioRef.current;
             const seq = ++loadSeqRef.current;
@@ -435,31 +620,109 @@ export function PlayerProvider({ children }) {
                 await safePlay();
             }
         },
-        [safePlay, clearStreamTimer]
+        [safePlay, clearStreamTimer, canPlayItem]
     );
 
-    const playNext = useCallback(() => {
-        setQueueIndex((prev) => {
-            const q = queueRef.current;
-            if (!q.length) return prev;
+    // --- serverQueue: consume first playable (FIFO) ---
+    const consumeFirstServerQueueItem = useCallback(async () => {
+        const q = serverQueueRef.current || [];
+        const idx = q.findIndex((it) => canPlayItem(it));
+        if (idx < 0) return null;
 
-            const targetIdx = findNextPlayable(q, prev, +1, canPlayItem);
+        const picked = q[idx];
 
-            if (targetIdx == null) {
-                audioRef.current.pause();
-                setIsPlaying(false);
-                clearStreamTimer();
-                return prev;
-            }
+        setServerQueue((prev) => prev.slice(idx + 1));
 
-            loadItem(q[targetIdx], autoplayRef.current);
-            return targetIdx;
-        });
-    }, [loadItem, clearStreamTimer, canPlayItem]);
+        if (picked?.queueID) removeServerQueueItem(picked.queueID);
+
+        return picked;
+    }, [canPlayItem, removeServerQueueItem]);
+
+    // playNext: serverQueue -> upNextQueue -> baseQueue
+    const playNext = useCallback(async () => {
+        // 1) serverQueue (lokalnie)
+        let fromServer = await consumeFirstServerQueueItem();
+
+        if (!fromServer && token) {
+            await refetchServerQueue();
+            fromServer = await consumeFirstServerQueueItem();
+        }
+
+        if (fromServer) {
+            lastBaseIndexRef.current = baseQueueIndexRef.current ?? 0;
+
+            currentSourceRef.current = "server";
+            loadItem(fromServer, autoplayRef.current);
+            return;
+        }
+
+        // 2) upNext (lokalna)
+        const up = upNextQueueRef.current || [];
+        const firstUpIdx = up.findIndex((x) => canPlayItem(x));
+        if (firstUpIdx >= 0) {
+            const nextItem = up[firstUpIdx];
+            setUpNextQueue(up.slice(firstUpIdx + 1));
+
+            lastBaseIndexRef.current = baseQueueIndexRef.current ?? 0;
+
+            currentSourceRef.current = "upnext";
+            loadItem(nextItem, autoplayRef.current);
+            return;
+        }
+
+        // 3) baseQueue
+        const bq = baseQueueRef.current || [];
+        if (!bq.length) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+            clearStreamTimer();
+            return;
+        }
+
+        const curIdx = baseQueueIndexRef.current ?? 0;
+        const targetIdx = findNextPlayable(bq, curIdx, +1, canPlayItem);
+
+        if (targetIdx == null) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+            clearStreamTimer();
+            return;
+        }
+
+        currentSourceRef.current = "base";
+        setBaseQueueIndex(targetIdx);
+
+        baseQueueIndexRef.current = targetIdx;
+        lastBaseIndexRef.current = targetIdx;
+
+        loadItem(bq[targetIdx], autoplayRef.current);
+    }, [
+        token,
+        refetchServerQueue,
+        consumeFirstServerQueueItem,
+        loadItem,
+        clearStreamTimer,
+        canPlayItem,
+    ]);
 
     const playPrevious = useCallback(() => {
         const audio = audioRef.current;
+        const bq = baseQueueRef.current || [];
 
+        // 1) Jeśli aktualnie gramy z kolejki (server/upnext) -> PREV wraca do baseQueue
+        if ((currentSourceRef.current === "server" || currentSourceRef.current === "upnext") && bq.length) {
+            const idx = Math.min(Math.max(0, lastBaseIndexRef.current ?? 0), bq.length - 1);
+
+            currentSourceRef.current = "base";
+            setBaseQueueIndex(idx);
+
+            baseQueueIndexRef.current = idx;
+
+            loadItem(bq[idx], autoplayRef.current);
+            return;
+        }
+
+        // 2) Standard: jeśli > 2s to restart bieżącego (dotyczy base)
         if (audio && Number.isFinite(audio.currentTime) && audio.currentTime > PREV_RESTART_THRESHOLD) {
             audio.currentTime = 0;
             setProgress(0);
@@ -470,81 +733,98 @@ export function PlayerProvider({ children }) {
             if (!audio.paused && currentItemRef.current) {
                 scheduleStreamAfter10s(currentItemRef.current);
             }
-
             historyStartedOnceRef.current = true;
             return;
         }
 
-        setQueueIndex((prev) => {
-            const q = queueRef.current;
-            if (!q.length) return prev;
+        if (!bq.length) return;
 
-            const targetIdx = findNextPlayable(q, prev, -1, canPlayItem);
+        const curIdx = baseQueueIndexRef.current ?? 0;
 
-            // jeśli nie ma odtwarzalnego w lewo: zostań na bieżącym
-            if (targetIdx == null) {
-                loadItem(q[prev], autoplayRef.current);
-                return prev;
-            }
+        // 3) Normalne cofanie w baseQueue
+        const targetIdx = findNextPlayable(bq, curIdx, -1, canPlayItem);
 
-            loadItem(q[targetIdx], autoplayRef.current);
-            return targetIdx;
-        });
+        if (targetIdx == null) {
+            const current = bq[curIdx];
+            if (current && canPlayItem(current)) loadItem(current, autoplayRef.current);
+            return;
+        }
+
+        setBaseQueueIndex(targetIdx);
+
+        baseQueueIndexRef.current = targetIdx;
+        lastBaseIndexRef.current = targetIdx;
+
+        loadItem(bq[targetIdx], autoplayRef.current);
     }, [loadItem, clearStreamTimer, scheduleStreamAfter10s, canPlayItem]);
 
     useEffect(() => {
         playNextRef.current = playNext;
     }, [playNext]);
 
+    // setNewQueue (ustawia baseQueue)
     const setNewQueue = useCallback(
         (items, startIndex = 0) => {
             if (!Array.isArray(items) || items.length === 0) return;
 
-            const playable = items.filter(canPlayItem);
-            if (!playable.length) return;
+            const filtered = items.filter(canPlayItem);
+            if (!filtered.length) return;
 
             const safeIndex = Math.min(Math.max(0, startIndex), items.length - 1);
             const selectedFromItems = items[safeIndex];
 
             const selectedKey = keyOf(selectedFromItems);
-
-            const selectedIndexPlayable = selectedKey
-                ? playable.findIndex((x) => keyOf(x) === selectedKey)
+            const selectedIndex = selectedKey
+                ? filtered.findIndex((x) => keyOf(x) === selectedKey)
                 : -1;
 
-            const selected =
-                selectedIndexPlayable >= 0 ? playable[selectedIndexPlayable] : playable[0];
+            const selected = selectedIndex >= 0 ? filtered[selectedIndex] : filtered[0];
 
-            let finalQueue = [...playable];
-
-            originalQueueRef.current = [...finalQueue];
+            let finalQueue = [...filtered];
+            originalBaseQueueRef.current = [...finalQueue];
 
             if (playbackModeRef.current === "shuffle") {
                 const selKey = keyOf(selected);
-                const rest = selKey
-                    ? finalQueue.filter((x) => keyOf(x) !== selKey)
-                    : finalQueue.slice(1);
-
+                const rest = selKey ? finalQueue.filter((x) => keyOf(x) !== selKey) : finalQueue.slice(1);
                 finalQueue = [selected, ...shuffleArray(rest)];
+                setBaseQueue(finalQueue);
+                setBaseQueueIndex(0);
 
-                setQueue(finalQueue);
-                setQueueIndex(0);
+                baseQueueRef.current = finalQueue;
+                baseQueueIndexRef.current = 0;
+                lastBaseIndexRef.current = 0;
+
+                currentSourceRef.current = "base";
                 loadItem(finalQueue[0], autoplayRef.current);
                 return;
             }
 
-            const startIdx = selectedKey
-                ? finalQueue.findIndex((x) => keyOf(x) === selectedKey)
-                : 0;
-
+            const startIdx = selectedKey ? finalQueue.findIndex((x) => keyOf(x) === selectedKey) : 0;
             const idx = startIdx >= 0 ? startIdx : 0;
 
-            setQueue(finalQueue);
-            setQueueIndex(idx);
+            setBaseQueue(finalQueue);
+            setBaseQueueIndex(idx);
+
+            baseQueueRef.current = finalQueue;
+            baseQueueIndexRef.current = idx;
+            lastBaseIndexRef.current = idx;
+
+            currentSourceRef.current = "base";
             loadItem(finalQueue[idx], autoplayRef.current);
         },
-        [loadItem]
+        [loadItem, canPlayItem]
     );
+
+    // enqueueEnd / enqueueNext (lokalne)
+    const enqueueEnd = useCallback((item) => {
+        if (!item) return;
+        setUpNextQueue((prev) => [...prev, item]);
+    }, []);
+
+    const enqueueNext = useCallback((item) => {
+        if (!item) return;
+        setUpNextQueue((prev) => [item, ...prev]);
+    }, []);
 
     // eventy audio
     useEffect(() => {
@@ -560,7 +840,6 @@ export function PlayerProvider({ children }) {
         const onEnded = async () => {
             clearStreamTimer();
             countedStreamKeyRef.current = null;
-
             historyStartedOnceRef.current = false;
 
             if (playbackModeRef.current === "repeat") {
@@ -568,6 +847,7 @@ export function PlayerProvider({ children }) {
                 await safePlay();
                 return;
             }
+
             playNextRef.current?.();
         };
 
@@ -610,8 +890,6 @@ export function PlayerProvider({ children }) {
             clearStreamTimer();
             countedStreamKeyRef.current = null;
             setIsPlaying(false);
-
-            // spróbuj przejść do następnego playable
             playNextRef.current?.();
         };
 
@@ -656,7 +934,6 @@ export function PlayerProvider({ children }) {
         }
     }, [token, stopAndReset]);
 
-    // UI kontrolki (persistują do backendu)
     const changeVolume = useCallback(
         (value) => {
             const v = Math.min(1, Math.max(0, Number(value)));
@@ -702,11 +979,31 @@ export function PlayerProvider({ children }) {
             progress,
             duration,
 
-            queue,
-            queueIndex,
+            // baseQueue
+            queue: baseQueue,
+            baseQueue,
+            queueIndex: baseQueueIndex,
             setNewQueue,
+
+            // nav
             playNext,
             playPrevious,
+
+            // local upNext
+            upNextQueue,
+            enqueueEnd,
+            enqueueNext,
+
+            // server queue
+            serverQueue,
+            refetchServerQueue,
+            clearServerQueue,
+            removeServerQueueItem,
+
+            enqueueServerEndSong,
+            enqueueServerNextSong,
+            enqueueServerEndPodcast,
+            enqueueServerNextPodcast,
 
             play,
             pause,
@@ -731,11 +1028,22 @@ export function PlayerProvider({ children }) {
             isPlaying,
             progress,
             duration,
-            queue,
-            queueIndex,
+            baseQueue,
+            baseQueueIndex,
             setNewQueue,
             playNext,
             playPrevious,
+            upNextQueue,
+            enqueueEnd,
+            enqueueNext,
+            serverQueue,
+            refetchServerQueue,
+            clearServerQueue,
+            removeServerQueueItem,
+            enqueueServerEndSong,
+            enqueueServerNextSong,
+            enqueueServerEndPodcast,
+            enqueueServerNextPodcast,
             play,
             pause,
             togglePlay,

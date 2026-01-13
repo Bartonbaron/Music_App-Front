@@ -20,7 +20,7 @@ import PodcastsPage from "./pages/podcasts/PodcastsPage.jsx";
 import PodcastPage from "./pages/podcasts/PodcastPage.jsx";
 import MyEpisodesPage from "./pages/podcasts/MyEpisodesPage.jsx";
 import LikedSongsPage from "./pages/LikedSongsPage.jsx";
-import PlayHistoryPage from "./pages/history/PlayHistoryPage.jsx";
+import PlayHistoryPage from "./pages/player/PlayHistoryPage.jsx";
 import SongsPage from "./pages/songs/SongsPage.jsx";
 import SongPage from "./pages/songs/SongPage.jsx";
 import UserPage from "./pages/users/UserPage.jsx";
@@ -31,6 +31,7 @@ import AdminStatsPage from "./pages/admin/AdminStatsPage.jsx";
 import AdminUsersPage from "./pages/admin/AdminUsersPage.jsx";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminReportsDetailsPage from "./pages/admin/AdminReportsDetailsPage";
+import QueuePage from "./pages/player/QueuePage.jsx";
 
 import "./index.css";
 
@@ -65,7 +66,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/users/:id" element={<PublicUserPage/>} />
                             <Route path="/creator/me" element={<CreatorPage/>} />
                             <Route path="/creators/:id" element={<PublicCreatorPage />} />
-
+                            <Route path="/queue" element={<QueuePage />} />
 
                             {/* Tylko administrator */}
                             <Route element={<AdminRoute />}>

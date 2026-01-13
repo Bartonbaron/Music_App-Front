@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
+import {addSongToQueue} from "../../api/queue.api.js";
 
 import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
@@ -41,8 +42,8 @@ function formatDateTime(value) {
 
 function pickSongCover(song) {
     return (
-        song?.album?.signedCover ||
-        song?.album?.coverURL ||
+        // song?.album?.signedCover ||
+        // song?.album?.coverURL ||
         song?.signedCover ||
         song?.coverURL ||
         null
@@ -55,7 +56,7 @@ export default function PlaylistPage() {
     const { user, token } = useAuth();
     const { setNewQueue } = usePlayer();
     const { playlists: libraryPlaylists, togglePlaylistInLibrary, refetch } = useLibrary();
-    const extractSignedAudio = (item) => item?.signedAudio || item?.signedUrl || null;
+    const { refetchServerQueue } = usePlayer();
 
     const [playlist, setPlaylist] = useState(null);
     const [items, setItems] = useState([]);
@@ -165,7 +166,6 @@ export default function PlaylistPage() {
                     setCollabList([]);
                 }
             } catch {
-                // cisza – jeśli endpointy nie istnieją / błąd, po prostu nie pokazujemy funkcji
                 if (!alive) return;
             }
         })();
@@ -211,10 +211,13 @@ export default function PlaylistPage() {
                 const s = row.song || {};
                 const mapped = mapSongToPlayerItem(s);
 
+                const isHidden = !!s?.isHidden || s?.moderationStatus === "HIDDEN";
+
                 return {
                     ...mapped,
                     type: "song",
                     signedCover: mapped.signedCover,
+
                     creatorName:
                         s.creatorName ||
                         s?.creator?.user?.userName ||
@@ -222,12 +225,15 @@ export default function PlaylistPage() {
                         mapped.creatorName ||
                         mapped.artistName ||
                         null,
+
                     songName: s.songName ?? mapped.title,
                     songID: s.songID ?? mapped.songID,
                     duration: s.duration ?? mapped.duration,
+                    isHidden,
+                    moderationStatus: s?.moderationStatus,
                 };
             })
-            .filter((x) => !!extractSignedAudio(x)); // <-- ważne
+            .filter((x) => !!x.signedAudio && !x.isHidden);
     }, [sortedItems, playlistOwner]);
 
     const queueIndexBySongId = useMemo(() => {
@@ -247,6 +253,40 @@ export default function PlaylistPage() {
         if (!queueItems.length) return;
         setNewQueue(queueItems, 0);
     }, [queueItems, setNewQueue]);
+
+    const handleAddToQueue = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "END");
+            await refetchServerQueue();
+            showToast?.("Dodano do kolejki", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd dodawania do kolejki", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast, refetchServerQueue]);
+
+    const handlePlayNext = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "NEXT");
+            await refetchServerQueue(); // <--- TO JEST KLUCZ
+            showToast?.("Ustawiono jako następny", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd ustawiania następnego", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast, refetchServerQueue]);
 
     const toggleLibraryOrDeletePlaylist = useCallback(async () => {
         if (!token) return;
@@ -794,22 +834,21 @@ export default function PlaylistPage() {
                 </div>
             ) : null}
 
-            {/* MODAL: SONG MENU */}
+            {/* MODAL: SONG MENU (playlist) */}
             <SongActionsModal
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 songTitle={activeSong?.title}
-                canRemoveFromCurrent={true}
+                hidden={!!activeSong?.hidden}
+                canRemoveFromCurrent={canEdit}
                 busy={menuBusy}
-                onRemoveFromCurrent={removeFromThisPlaylist}
-                onAddToPlaylist={
-                    activeSong?.hidden
-                        ? null
-                        : () => {
-                            setMenuOpen(false);
-                            setAddOpen(true);
-                        }
-                }
+                onAddToPlaylist={() => {
+                    setMenuOpen(false);
+                    setAddOpen(true);
+                }}
+                onRemoveFromCurrent={canEdit ? removeFromThisPlaylist : null}
+                onAddToQueue={handleAddToQueue}
+                onPlayNext={handlePlayNext}
             />
 
             {/* MODAL: ADD TO PLAYLIST */}
@@ -1058,12 +1097,22 @@ export default function PlaylistPage() {
                     const queueIdx = queueIndexBySongId.get(String(s.songID));
 
                     const hidden = !!s?.isHidden || s?.moderationStatus === "HIDDEN";
+                    const playable = !!s?.signedAudio && !hidden;
+                    const canPlayBtn = playable && queueIdx != null && !reorderMode;
 
                     const artist = s.creatorName || s?.creator?.user?.userName || playlistOwner || "—";
                     const addedAtLabel = formatDateTime(row?.addedAt);
                     const addedByName = row?.addedBy?.userName || null;
 
                     const key = `${row.playlistID}-${row.songID}-${row.position ?? idx}`;
+
+                    const playTitle = reorderMode
+                        ? "Tryb zmiany kolejności"
+                        : hidden
+                            ? "Utwór ukryty przez administrację"
+                            : playable
+                                ? "Odtwórz od tego"
+                                : "Utwór niedostępny";
 
                     const disabledRow = hidden;
                     const rowStyle = disabledRow
@@ -1072,32 +1121,29 @@ export default function PlaylistPage() {
 
                     return (
                         <div key={key} style={rowStyle}>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (reorderMode) return;
-                                    if (queueIdx == null) return; // brak w kolejce = nieodtwarzalny (hidden/niedostępny)
-                                    setNewQueue(queueItems, queueIdx);
-                                }}
-                                disabled={queueIdx == null || reorderMode}
+                            <div
+                                title={playTitle}
                                 style={{
-                                    ...styles.rowPlayBtn,
-                                    opacity: queueIdx != null && !reorderMode ? 1 : 0.45,
-                                    cursor: queueIdx != null && !reorderMode ? "pointer" : "not-allowed",
-                                    pointerEvents: reorderMode ? "none" : "auto", // identycznie jak w albumach
+                                    display: "inline-flex",
+                                    cursor: canPlayBtn ? "pointer" : "not-allowed",
                                 }}
-                                title={
-                                    reorderMode
-                                        ? "Tryb zmiany kolejności"
-                                        : hidden
-                                            ? "Utwór ukryty przez administrację"
-                                            : queueIdx != null
-                                                ? "Odtwórz od tego"
-                                                : "Utwór niedostępny"
-                                }
                             >
-                                ▶
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!canPlayBtn) return;
+                                        setNewQueue(queueItems, queueIdx);
+                                    }}
+                                    disabled={!canPlayBtn}
+                                    style={{
+                                        ...styles.rowPlayBtn,
+                                        opacity: canPlayBtn ? 1 : 0.45,
+                                        cursor: "inherit",
+                                    }}
+                                >
+                                    ▶
+                                </button>
+                            </div>
 
                             <div style={styles.miniCoverWrap}>
                                 {pickSongCover(s) ? (
@@ -1183,7 +1229,7 @@ export default function PlaylistPage() {
                                         ↓
                                     </button>
                                 </div>
-                            ) : canEdit ? (
+                            ) : (
                                 <button
                                     type="button"
                                     onClick={() => openSongMenu(s.songID, s.songName || "Utwór", { hidden })}
@@ -1198,16 +1244,13 @@ export default function PlaylistPage() {
                                         menuDisabled
                                             ? "Tryb zmiany kolejności"
                                             : hidden
-                                                ? "Utwór ukryty (dostępne opcje playlisty)"
+                                                ? "Utwór ukryty"
                                                 : "Opcje"
                                     }
                                 >
                                     ⋯
                                 </button>
-                            ) : (
-                                <div />
                             )}
-
                             <div style={styles.trackTime}>{formatTrackDuration(s.duration)}</div>
                         </div>
                     );
@@ -1281,11 +1324,9 @@ const styles = {
 
     list: { marginTop: 18 },
 
-    row: (canEdit) => ({
+    row: () => ({
         display: "grid",
-        gridTemplateColumns: canEdit
-            ? "44px 44px 34px minmax(0, 1fr) 44px 44px 70px"
-            : "44px 44px 34px minmax(0, 1fr) 44px 70px",
+        gridTemplateColumns: "44px 44px 34px minmax(0, 1fr) 44px 44px 70px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",

@@ -5,6 +5,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
+import { addPodcastToQueue } from "../../api/queue.api";
+import PodcastActionsModal from "../../components/common/PodcastActionsModal";
 
 function pickPodcastCover(p) {
     return p?.signedCover || null;
@@ -17,6 +19,10 @@ export default function MyEpisodesPage() {
 
     const [toast, setToast] = useState(null);
     const [busyId, setBusyId] = useState(null);
+
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activePodcast, setActivePodcast] = useState(null);
+    const [menuBusy, setMenuBusy] = useState(false);
 
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
@@ -86,6 +92,38 @@ export default function MyEpisodesPage() {
         },
         [token, togglePodcastFavorite, showToast]
     );
+
+    const handleAddToQueue = useCallback(async () => {
+        const podcastID = activePodcast?.podcastID;
+        if (!token || !podcastID) return;
+
+        setMenuBusy(true);
+        try {
+            await addPodcastToQueue(token, podcastID, "END");
+            showToast?.("Dodano do kolejki", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd dodawania do kolejki", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activePodcast?.podcastID, showToast]);
+
+    const handlePlayNext = useCallback(async () => {
+        const podcastID = activePodcast?.podcastID;
+        if (!token || !podcastID) return;
+
+        setMenuBusy(true);
+        try {
+            await addPodcastToQueue(token, podcastID, "NEXT");
+            showToast?.("Ustawiono jako następny", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd ustawiania następnego", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activePodcast?.podcastID, showToast]);
 
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (error) return <div style={styles.page}>{error}</div>;
@@ -229,11 +267,41 @@ export default function MyEpisodesPage() {
                                 <Heart size={16} style={{ display: "block" }} fill="currentColor" />
                             </button>
 
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!playable) return;
+                                    setActivePodcast({
+                                        type: "podcast",
+                                        podcastID: p.podcastID,
+                                        title,
+                                    });
+                                    setMenuOpen(true);
+                                }}
+                                disabled={!playable}
+                                style={{
+                                    ...styles.moreBtn,
+                                    opacity: playable ? 1 : 0.45,
+                                    cursor: playable ? "pointer" : "not-allowed",
+                                }}
+                                title="Więcej"
+                            >
+                                ⋯
+                            </button>
+
                             <div style={styles.trackTime}>{formatTrackDuration(p.duration)}</div>
                         </div>
                     );
                 })}
             </div>
+            <PodcastActionsModal
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                podcastTitle={activePodcast?.title}
+                busy={menuBusy}
+                onAddToQueue={handleAddToQueue}
+                onPlayNext={handlePlayNext}
+            />
         </div>
     );
 }
@@ -301,7 +369,7 @@ const styles = {
 
     row: {
         display: "grid",
-        gridTemplateColumns: "44px 44px 40px minmax(0, 1fr) 44px 60px",
+        gridTemplateColumns: "44px 44px 40px 1fr 44px 44px 60px",
         gap: 12,
         alignItems: "center",
         padding: "10px 8px",
@@ -349,6 +417,22 @@ const styles = {
         justifyContent: "center",
         padding: 0,
         lineHeight: 0,
+    },
+
+    moreBtn: {
+        width: 38,
+        height: 34,
+        borderRadius: 10,
+        border: "1px solid #333",
+        background: "transparent",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        lineHeight: 0,
+        fontWeight: 900,
+        fontSize: 18,
     },
 
     trackNo: { opacity: 0.7, textAlign: "right", fontVariantNumeric: "tabular-nums" },

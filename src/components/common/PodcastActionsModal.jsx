@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 
-export default function SongActionsModal({open, onClose, songTitle, hidden = false, canRemoveFromCurrent = false,
-onAddToPlaylist, onRemoveFromCurrent, onAddToQueue, onPlayNext, busy = false }) {
+export default function PodcastActionsModal({open, onClose, podcastTitle, onAddToQueue, onPlayNext, busy = false }) {
     const stop = useCallback((e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -12,13 +11,12 @@ onAddToPlaylist, onRemoveFromCurrent, onAddToQueue, onPlayNext, busy = false }) 
     return (
         <div style={styles.backdrop} onMouseDown={onClose}>
             <div style={styles.modal} onMouseDown={stop}>
-                <div style={styles.title} title={songTitle || ""}>
-                    {songTitle || "Utwór"}
+                <div style={styles.title} title={podcastTitle || ""}>
+                    {podcastTitle || "Podcast"}
                 </div>
 
                 <div style={styles.buttons}>
-                    {/* ✅ kolejka tylko jeśli nie hidden */}
-                    {!hidden && typeof onPlayNext === "function" ? (
+                    {typeof onPlayNext === "function" ? (
                         <button
                             type="button"
                             onClick={onPlayNext}
@@ -34,7 +32,7 @@ onAddToPlaylist, onRemoveFromCurrent, onAddToQueue, onPlayNext, busy = false }) 
                         </button>
                     ) : null}
 
-                    {!hidden && typeof onAddToQueue === "function" ? (
+                    {typeof onAddToQueue === "function" ? (
                         <button
                             type="button"
                             onClick={onAddToQueue}
@@ -44,39 +42,9 @@ onAddToPlaylist, onRemoveFromCurrent, onAddToQueue, onPlayNext, busy = false }) 
                                 opacity: busy ? 0.6 : 1,
                                 cursor: busy ? "not-allowed" : "pointer",
                             }}
-                            title="Dodaj na koniec kolejki"
+                            title="Doda na koniec kolejki"
                         >
                             Dodaj do kolejki
-                        </button>
-                    ) : null}
-
-                    {!hidden && typeof onAddToPlaylist === "function" ? (
-                        <button
-                            type="button"
-                            onClick={onAddToPlaylist}
-                            disabled={busy}
-                            style={{
-                                ...styles.btn,
-                                opacity: busy ? 0.6 : 1,
-                                cursor: busy ? "not-allowed" : "pointer",
-                            }}
-                        >
-                            Dodaj do playlisty
-                        </button>
-                    ) : null}
-
-                    {canRemoveFromCurrent && typeof onRemoveFromCurrent === "function" ? (
-                        <button
-                            type="button"
-                            onClick={onRemoveFromCurrent}
-                            disabled={busy}
-                            style={{
-                                ...styles.btnDanger,
-                                opacity: busy ? 0.6 : 1,
-                                cursor: busy ? "not-allowed" : "pointer",
-                            }}
-                        >
-                            Usuń z tej playlisty
                         </button>
                     ) : null}
 
@@ -115,7 +83,11 @@ const styles = {
         overflow: "hidden",
         textOverflow: "ellipsis",
     },
-    buttons: { display: "flex", flexDirection: "column", gap: 8 },
+    buttons: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+    },
     btn: {
         borderRadius: 12,
         border: "1px solid #2a2a2a",
@@ -124,15 +96,6 @@ const styles = {
         padding: "10px 12px",
         textAlign: "left",
         fontWeight: 800,
-    },
-    btnDanger: {
-        borderRadius: 12,
-        border: "1px solid #3a1d1d",
-        background: "#231010",
-        color: "#ffb4b4",
-        padding: "10px 12px",
-        textAlign: "left",
-        fontWeight: 900,
     },
     btnGhost: {
         borderRadius: 12,

@@ -5,6 +5,7 @@ import { Plus, Trash2, Play, X, Save, Image as ImageIcon, Pencil, Music2, ArrowU
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
+import {addSongToQueue} from "../../api/queue.api.js";
 
 import LikeButton from "../../components/common/LikeButton";
 import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
@@ -53,6 +54,7 @@ export default function AlbumPage() {
     const { token, user } = useAuth();
     const { setNewQueue } = usePlayer();
     const { albums: libraryAlbums, toggleAlbumInLibrary } = useLibrary();
+    const { refetchServerQueue } = usePlayer();
 
     const [album, setAlbum] = useState(null);
     const [songs, setSongs] = useState([]);
@@ -74,7 +76,7 @@ export default function AlbumPage() {
     const [addOpen, setAddOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [activeSong, setActiveSong] = useState(null);
-    const [menuBusy] = useState(false);
+    const [menuBusy, setMenuBusy] = useState(false);
 
     // owner modals
     const [editAlbumOpen, setEditAlbumOpen] = useState(false);
@@ -325,6 +327,40 @@ export default function AlbumPage() {
         setMenuOpen(true);
     }, []);
 
+    const handleAddToQueue = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "END");
+            await refetchServerQueue();
+            showToast?.("Dodano do kolejki", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd dodawania do kolejki", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast, refetchServerQueue]);
+
+    const handlePlayNext = useCallback(async () => {
+        const songID = activeSong?.songID;
+        if (!token || !songID) return;
+
+        setMenuBusy(true);
+        try {
+            await addSongToQueue(token, songID, "NEXT");
+            await refetchServerQueue(); // <--- TO JEST KLUCZ
+            showToast?.("Ustawiono jako następny", "success");
+            setMenuOpen(false);
+        } catch (e) {
+            showToast?.(e?.message || "Błąd ustawiania następnego", "error");
+        } finally {
+            setMenuBusy(false);
+        }
+    }, [token, activeSong?.songID, showToast, refetchServerQueue]);
+
     const isOwner = useMemo(() => {
         const albumCreatorUserID = album?.creator?.userID ?? album?.creator?.user?.userID ?? null;
         const myUserID = user?.userID ?? user?.id ?? null;
@@ -430,7 +466,7 @@ export default function AlbumPage() {
         }
     }, [token, id, showToast]);
 
-    // ========= OWNER: Manage Tracks Modal =========
+    // OWNER: Manage Tracks Modal
     const [tracksBusy, setTracksBusy] = useState(false);
 
     // wolne utwory do przypięcia
@@ -564,7 +600,7 @@ export default function AlbumPage() {
                 </div>
             ) : null}
 
-            {/* MODAL: SONG MENU (playlist) */}
+            {/* MODAL: SONG MENU (album) */}
             <SongActionsModal
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
@@ -576,6 +612,8 @@ export default function AlbumPage() {
                     setAddOpen(true);
                 }}
                 onRemoveFromCurrent={null}
+                onAddToQueue={handleAddToQueue}
+                onPlayNext={handlePlayNext}
             />
 
             {/* MODAL: ADD TO PLAYLIST */}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User as UserIcon, Calendar, Shield, ListMusic } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Calendar, Shield, ListMusic, Flag } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { fetchPublicUser, fetchPublicUserPlaylists } from "../../api/users.api";
+import { apiFetch } from "../../api/http";
 
 function formatFullDate(value) {
     if (!value) return "—";
@@ -38,13 +39,23 @@ export default function PublicUserPage() {
     const params = useParams();
     const userID = params.id ?? params.userID;
 
-    const { token } = useAuth();
+    const { token, user: authUser } = useAuth();
 
     const [user, setUser] = useState(null);
     const [playlists, setPlaylists] = useState([]);
 
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState("");
+
+    const [toast, setToast] = useState(null);
+    const showToast = useCallback((text, type = "success") => {
+        setToast({ text, type });
+        window.setTimeout(() => setToast(null), 1600);
+    }, []);
+
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportReason, setReportReason] = useState("");
+    const [reportBusy, setReportBusy] = useState(false);
 
     const load = useCallback(async () => {
         if (!token) {
@@ -70,8 +81,6 @@ export default function PublicUserPage() {
             ]);
 
             setUser(uRes?.user ?? null);
-
-            // public-playlists endpoint -> tablica
             setPlaylists(Array.isArray(pRes) ? pRes : []);
         } catch (e) {
             setMsg(e?.message || "Nie udało się pobrać danych użytkownika.");
@@ -90,6 +99,56 @@ export default function PublicUserPage() {
     const roleName = user?.role?.roleName || user?.roleName || user?.role || "—";
     const createdAtLabel = useMemo(() => formatFullDate(user?.createdAt), [user?.createdAt]);
 
+    const isSelf = useMemo(() => {
+        const viewed = Number(userID);
+        const me = Number(authUser?.userID ?? authUser?.id);
+        if (!Number.isFinite(viewed) || !Number.isFinite(me)) return false;
+        return viewed === me;
+    }, [userID, authUser]);
+
+    const handleReportUser = useCallback(async () => {
+        if (!token) return;
+        if (!userID) return;
+
+        if (isSelf) {
+            showToast("Nie możesz zgłosić samego siebie", "error");
+            return;
+        }
+
+        const contentID = Number(userID);
+        if (!Number.isFinite(contentID) || contentID <= 0) {
+            showToast("Nieprawidłowe ID użytkownika", "error");
+            return;
+        }
+
+        const reason = String(reportReason || "").trim();
+        if (reason.length < 3) {
+            showToast("Podaj krótki powód (min. 3 znaki)", "error");
+            return;
+        }
+
+        setReportBusy(true);
+        try {
+            await apiFetch("/reports", {
+                token,
+                method: "POST",
+                body: {
+                    contentType: "user",
+                    contentID,
+                    reason,
+                },
+            });
+
+            showToast("Zgłoszenie wysłane", "success");
+            setReportOpen(false);
+            setReportReason("");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się wysłać zgłoszenia", "error");
+        } finally {
+            setReportBusy(false);
+        }
+    }, [token, userID, isSelf, reportReason, showToast]);
+
     if (!token) {
         return (
             <div style={styles.page}>
@@ -100,6 +159,27 @@ export default function PublicUserPage() {
 
     return (
         <div style={styles.page}>
+            {/* TOAST */}
+            {toast ? (
+                <div
+                    style={{
+                        position: "fixed",
+                        right: 18,
+                        bottom: 110,
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #2a2a2a",
+                        color: "white",
+                        zIndex: 999,
+                        fontSize: 13,
+                        background: toast.type === "error" ? "#2a1515" : "#142015",
+                        borderColor: toast.type === "error" ? "#7a2a2a" : "#2a7a3a",
+                    }}
+                >
+                    {toast.text}
+                </div>
+            ) : null}
+
             {/* TOP BAR */}
             <div style={styles.topBar}>
                 <button type="button" onClick={() => navigate(-1)} style={styles.backBtn} title="Wstecz">
@@ -110,7 +190,6 @@ export default function PublicUserPage() {
 
             {loading ? <div style={{ opacity: 0.75 }}>Ładowanie…</div> : null}
             {msg ? <div style={styles.hint}>{msg}</div> : null}
-
             {!loading && !msg && !user ? <div style={styles.hint}>Nie znaleziono użytkownika.</div> : null}
 
             {user ? (
@@ -134,17 +213,46 @@ export default function PublicUserPage() {
                                 )}
                             </div>
 
-                            <div style={{ minWidth: 0 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
                                 <div style={styles.kicker}>UŻYTKOWNIK</div>
-                                <h1 style={styles.h1} title={user.userName || "Użytkownik"}>
-                                    {user.userName || "Użytkownik"}
-                                </h1>
+                                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                    <h1 style={styles.h1} title={user.userName || "Użytkownik"}>
+                                        {user.userName || "Użytkownik"}
+                                    </h1>
+
+                                    {/* Zgłoś użytkownika */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setReportOpen(true)}
+                                        disabled={isSelf}
+                                        title={isSelf ? "Nie możesz zgłosić siebie" : "Zgłoś użytkownika"}
+                                        style={{
+                                            borderRadius: 12,
+                                            border: "1px solid #3a1d1d",
+                                            background: "#231010",
+                                            color: "#ffb4b4",
+                                            padding: "10px 12px",
+                                            fontWeight: 900,
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            opacity: isSelf ? 0.45 : 1,
+                                            cursor: isSelf ? "not-allowed" : "pointer",
+                                            whiteSpace: "nowrap",
+                                            flex: "0 0 auto",
+                                        }}
+                                    >
+                                        <Flag size={16} style={{ display: "block" }} />
+                                        Zgłoś
+                                    </button>
+                                </div>
 
                                 <div style={styles.metaLine}>
-                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                        <Shield size={14} style={{ display: "block", opacity: 0.85 }} />
-                                        <span style={{ opacity: 0.9 }}>{roleName}</span>
-                                    </span>
+
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                    <Shield size={14} style={{ display: "block", opacity: 0.85 }} />
+                                    <span style={{ opacity: 0.9 }}>{roleName}</span>
+                                </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
 
@@ -162,9 +270,7 @@ export default function PublicUserPage() {
                         <div style={styles.sectionTitleRow}>
                             <ListMusic size={16} style={{ display: "block", opacity: 0.85 }} />
                             <div style={styles.sectionTitle}>Publiczne playlisty</div>
-                            <div style={{ marginLeft: "auto", opacity: 0.65, fontSize: 12 }}>
-                                {playlists.length}
-                            </div>
+                            <div style={{ marginLeft: "auto", opacity: 0.65, fontSize: 12 }}>{playlists.length}</div>
                         </div>
 
                         {playlists.length === 0 ? (
@@ -175,7 +281,6 @@ export default function PublicUserPage() {
                                     const cover = pickPlaylistCover(p);
                                     const name = pickPlaylistName(p);
                                     const count = pickItemsCount(p);
-
                                     const pid = p?.playlistID ?? p?.id ?? null;
 
                                     return (
@@ -192,18 +297,12 @@ export default function PublicUserPage() {
                                             title={name}
                                         >
                                             <div style={styles.itemCover}>
-                                                {cover ? (
-                                                    <img src={cover} alt="" style={styles.itemCoverImg} />
-                                                ) : (
-                                                    <div style={styles.itemCoverPh} />
-                                                )}
+                                                {cover ? <img src={cover} alt="" style={styles.itemCoverImg} /> : <div style={styles.itemCoverPh} />}
                                             </div>
 
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <div style={styles.itemTitle}>{name}</div>
-                                                <div style={styles.itemSub}>
-                                                    {count != null ? `${count} utw.` : "—"}
-                                                </div>
+                                                <div style={styles.itemSub}>{count != null ? `${count} utw.` : "—"}</div>
                                             </div>
 
                                             <div style={styles.openHint}>Otwórz</div>
@@ -214,6 +313,108 @@ export default function PublicUserPage() {
                         )}
                     </div>
                 </>
+            ) : null}
+
+            {/* MODAL: Zgłoś użytkownika */}
+            {reportOpen ? (
+                <div
+                    style={{
+                        position: "fixed",
+                        inset: 0,
+                        background: "rgba(0,0,0,0.55)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 1200,
+                        padding: 16,
+                    }}
+                    onMouseDown={(e) => {
+                        if (reportBusy) return;
+                        if (e.target === e.currentTarget) setReportOpen(false);
+                    }}
+                >
+                    <div
+                        style={{
+                            width: "min(520px, 100%)",
+                            borderRadius: 14,
+                            border: "1px solid #2a2a2a",
+                            background: "#121212",
+                            padding: 14,
+                            boxShadow: "0 18px 48px rgba(0,0,0,0.55)",
+                        }}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                        }}
+                    >
+                        <div style={{ fontWeight: 900, marginBottom: 10 }}>
+                            Zgłoś użytkownika: <span style={{ opacity: 0.9 }}>{user?.userName || "Użytkownik"}</span>
+                        </div>
+
+                        <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
+                            Opisz krótko powód zgłoszenia. Moderacja zweryfikuje sprawę.
+                        </div>
+
+                        <textarea
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value)}
+                            placeholder="Np. obraźliwa nazwa / podszywanie się / spam…"
+                            rows={4}
+                            disabled={reportBusy}
+                            style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                resize: "vertical",
+                                borderRadius: 12,
+                                border: "1px solid #2a2a2a",
+                                background: "#1a1a1a",
+                                color: "white",
+                                padding: 12,
+                                outline: "none",
+                                fontSize: 13,
+                                marginBottom: 12,
+                                opacity: reportBusy ? 0.7 : 1,
+                            }}
+                        />
+
+                        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                            <button
+                                type="button"
+                                onClick={() => setReportOpen(false)}
+                                disabled={reportBusy}
+                                style={{
+                                    borderRadius: 12,
+                                    border: "1px solid #2a2a2a",
+                                    background: "transparent",
+                                    color: "white",
+                                    padding: "10px 12px",
+                                    fontWeight: 800,
+                                    opacity: reportBusy ? 0.6 : 0.9,
+                                    cursor: reportBusy ? "not-allowed" : "pointer",
+                                }}
+                            >
+                                Anuluj
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleReportUser}
+                                disabled={reportBusy}
+                                style={{
+                                    borderRadius: 12,
+                                    border: "1px solid #3a1d1d",
+                                    background: "#231010",
+                                    color: "#ffb4b4",
+                                    padding: "10px 12px",
+                                    fontWeight: 900,
+                                    opacity: reportBusy ? 0.6 : 1,
+                                    cursor: reportBusy ? "not-allowed" : "pointer",
+                                }}
+                            >
+                                {reportBusy ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             ) : null}
 
             <div style={{ height: 120 }} />
@@ -229,14 +430,7 @@ const styles = {
         padding: "20px 40px",
         paddingBottom: 120,
     },
-
-    topBar: {
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 18,
-    },
-
+    topBar: { display: "flex", alignItems: "center", gap: 12, marginBottom: 18 },
     backBtn: {
         width: 38,
         height: 34,
@@ -251,7 +445,6 @@ const styles = {
         lineHeight: 0,
         cursor: "pointer",
     },
-
     hint: {
         background: "#1b1b1b",
         border: "1px solid #2a2a2a",
@@ -261,22 +454,9 @@ const styles = {
         fontSize: 13,
         marginBottom: 12,
     },
-
-    hintInline: {
-        opacity: 0.75,
-        fontSize: 13,
-        padding: "6px 2px",
-    },
-
-    card: {
-        background: "#1e1e1e",
-        borderRadius: 14,
-        border: "1px solid #2a2a2a",
-        padding: 16,
-    },
-
+    hintInline: { opacity: 0.75, fontSize: 13, padding: "6px 2px" },
+    card: { background: "#1e1e1e", borderRadius: 14, border: "1px solid #2a2a2a", padding: 16 },
     profileRow: { display: "flex", gap: 16, alignItems: "center" },
-
     avatarWrap: {
         width: 160,
         height: 160,
@@ -295,7 +475,6 @@ const styles = {
         justifyContent: "center",
         background: "linear-gradient(135deg, #2b2b2b, #1f1f1f)",
     },
-
     kicker: { fontSize: 12, opacity: 0.7, letterSpacing: 1.2, fontWeight: 900 },
     h1: {
         margin: "6px 0 8px",
@@ -305,21 +484,10 @@ const styles = {
         overflow: "hidden",
         textOverflow: "ellipsis",
     },
-
-    metaLine: {
-        opacity: 0.9,
-        fontSize: 13,
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        flexWrap: "wrap",
-    },
-
+    metaLine: { opacity: 0.9, fontSize: 13, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
     sectionTitleRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
     sectionTitle: { fontWeight: 900, opacity: 0.95 },
-
     list: { display: "flex", flexDirection: "column", gap: 10 },
-
     item: {
         display: "flex",
         alignItems: "center",
@@ -330,21 +498,11 @@ const styles = {
         background: "#141414",
         cursor: "pointer",
     },
-
-    itemCover: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        overflow: "hidden",
-        background: "#2a2a2a",
-        flex: "0 0 auto",
-    },
+    itemCover: { width: 44, height: 44, borderRadius: 12, overflow: "hidden", background: "#2a2a2a", flex: "0 0 auto" },
     itemCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
     itemCoverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
-
     itemTitle: { fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     itemSub: { fontSize: 12, opacity: 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-
     openHint: {
         opacity: 0.55,
         fontSize: 12,

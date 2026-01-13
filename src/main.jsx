@@ -27,6 +27,8 @@ import UserPage from "./pages/users/UserPage.jsx";
 import PublicUserPage from "./pages/users/PublicUserPage";
 import CreatorPage from "./pages/creators/CreatorPage.jsx";
 import PublicCreatorPage from "./pages/creators/PublicCreatorPage.jsx";
+import AdminGenresPage from "./pages/admin/AdminGenresPage.jsx";
+import AdminTopicsPage from "./pages/admin/AdminTopicsPage.jsx";
 import AdminStatsPage from "./pages/admin/AdminStatsPage.jsx";
 import AdminUsersPage from "./pages/admin/AdminUsersPage.jsx";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
@@ -70,6 +72,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
 
                             {/* Tylko administrator */}
                             <Route element={<AdminRoute />}>
+                                <Route path="/admin/topics" element={<AdminTopicsPage />} />
+                                <Route path="/admin/genres" element={<AdminGenresPage />} />
                                 <Route path="/admin/stats" element={<AdminStatsPage />} />
                                 <Route path="/admin/users" element={<AdminUsersPage />} />
                                 <Route path="/admin/reports" element={<AdminReportsPage />} />

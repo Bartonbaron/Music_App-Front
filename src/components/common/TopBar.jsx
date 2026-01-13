@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, Shield, BarChart3, Flag, Users as UsersIcon,} from "lucide-react";
+import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3, Flag, Users as UsersIcon, Tags, Mic2} from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
@@ -86,6 +86,16 @@ export default function TopBar() {
     const onGoAdminUsers = useCallback(() => {
         close();
         navigate("/admin/users");
+    }, [close, navigate]);
+
+    const onGoAdminGenres = useCallback(() => {
+        close();
+        navigate("/admin/genres");
+    }, [close, navigate]);
+
+    const onGoAdminTopics = useCallback(() => {
+        close();
+        navigate("/admin/topics");
     }, [close, navigate]);
 
     return (
@@ -194,6 +204,28 @@ export default function TopBar() {
                                     >
                                         <UsersIcon size={16} style={{ display: "block" }} />
                                         <span style={{ flex: 1, textAlign: "left" }}>Użytkownicy</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        style={styles.menuItem}
+                                        role="menuitem"
+                                        onClick={onGoAdminGenres}
+                                        title="Zarządzanie gatunkami"
+                                    >
+                                        <Tags size={16} style={{ display: "block" }} />
+                                        <span style={{ flex: 1, textAlign: "left" }}>Gatunki</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        style={styles.menuItem}
+                                        role="menuitem"
+                                        onClick={onGoAdminTopics}
+                                        title="Zarządzanie tematami podcastów"
+                                    >
+                                        <Mic2 size={16} style={{ display: "block" }} />
+                                        <span style={{ flex: 1, textAlign: "left" }}>Tematy podcastów</span>
                                     </button>
                                 </>
                             ) : null}

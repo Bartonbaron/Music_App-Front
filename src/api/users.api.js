@@ -65,3 +65,19 @@ export async function deleteMyAvatar(token) {
         method: "DELETE",
     });
 }
+
+export async function deactivateAccount(token) {
+    const res = await fetch("http://localhost:3000/api/users/me/deactivate", {
+        method: "PATCH",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.message || "Nie udało się zdezaktywować konta");
+    }
+    return data;
+}

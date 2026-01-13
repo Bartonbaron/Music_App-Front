@@ -80,7 +80,7 @@ export default function AdminStatsPage() {
 
                     <Section title="Zgłoszenia">
                         <div style={styles.grid}>
-                            <StatCard label="W toku" value={stats.moderation?.reports?.pending ?? 0} />
+                            <StatCard label="Oczekujące" value={stats.moderation?.reports?.pending ?? 0} />
                             <StatCard label="Przejrzane" value={stats.moderation?.reports?.reviewed ?? 0} />
                             <StatCard label="Zakończone" value={stats.moderation?.reports?.resolved ?? 0} />
                         </div>

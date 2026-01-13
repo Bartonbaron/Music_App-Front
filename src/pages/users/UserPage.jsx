@@ -14,6 +14,9 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import {deactivateAccount} from "../../api/users.api";
+const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
 
 import {
     fetchMyProfile,
@@ -43,11 +46,14 @@ function clamp(n, a, b) {
 }
 
 export default function UserPage() {
-    const { token } = useAuth();
+    const { token, logout, user } = useAuth();
 
-    const [user, setUser] = useState(null);
+    const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState("");
+
+    const [busy, setBusy] = useState(false);
+    const navigate = useNavigate();
 
     const [toast, setToast] = useState(null);
     const showToast = useCallback((text, type = "success") => {
@@ -57,7 +63,7 @@ export default function UserPage() {
 
     const [avatarBusy, setAvatarBusy] = useState(false);
     const fileInputRef = useRef(null);
-    const avatarSrc = user?.signedProfilePicURL || null;
+    const avatarSrc = profile?.signedProfilePicURL || null;
 
     const [editOpen, setEditOpen] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
@@ -85,7 +91,7 @@ export default function UserPage() {
             const data = await fetchMyProfile(token);
 
             const u = data?.user ?? null;
-            setUser(u);
+            setProfile(u);
 
             // init prefs UI
             const v = clamp(u?.volume ?? 0.8, 0, 1);
@@ -94,7 +100,7 @@ export default function UserPage() {
             setAutoplayUI(Boolean(u?.autoplay));
         } catch (e) {
             setMsg(e?.message || "Błąd pobierania profilu");
-            setUser(null);
+            setProfile(null);
         } finally {
             setLoading(false);
         }
@@ -102,7 +108,7 @@ export default function UserPage() {
 
     useEffect(() => {
         if (!token) {
-            setUser(null);
+            setProfile(null);
             setMsg("Zaloguj się, aby zobaczyć profil.");
             return;
         }
@@ -110,15 +116,14 @@ export default function UserPage() {
     }, [token, fetchMe]);
 
     const roleName = user?.role?.roleName || "—";
-    const createdAtLabel = useMemo(() => formatFullDate(user?.createdAt), [user?.createdAt]);
-    const statusLabel = user?.status === false ? "Dezaktywowane" : "Aktywne";
+    const createdAtLabel = useMemo(() => formatFullDate(profile?.createdAt), [profile?.createdAt]);
+    const statusLabel = profile?.status === false ? "Dezaktywowane" : "Aktywne";
 
     const openEdit = useCallback(() => {
-        if (!user) return;
-        setEditUserName(user.userName || "");
-        setEditEmail(user.email || "");
+        if (!profile) return;
+        setEditUserName(profile.userName || "");setEditEmail(profile.email || "");
         setEditOpen(true);
-    }, [user]);
+    }, [profile]);
 
     const saveProfile = useCallback(async () => {
         if (!token) {
@@ -198,6 +203,31 @@ export default function UserPage() {
         }
     }, [token, volumeUI, modeUI, autoplayUI, showToast, fetchMe]);
 
+    const handleDeactivate = useCallback(async () => {
+        if (!token) return;
+
+        if (profile?.roleID === ADMIN_ROLE_ID) return;
+
+        const ok = window.confirm(
+            "Czy na pewno chcesz zdezaktywować konto?\n\n" +
+            "Zostaniesz wylogowany, a dostęp do konta zostanie zablokowany."
+        );
+        if (!ok) return;
+
+        setBusy(true);
+        try {
+            await deactivateAccount(token);
+            alert("Konto zostało zdezaktywowane.");
+
+            logout();
+            navigate("/login");
+        } catch (e) {
+            showToast?.(e.message || "Błąd dezaktywacji konta", "error");
+        } finally {
+            setBusy(false);
+        }
+    }, [token, logout, navigate, showToast]);
+
     const onPickAvatar = useCallback(() => {
         fileInputRef.current?.click();
     }, []);
@@ -210,7 +240,7 @@ export default function UserPage() {
             setAvatarBusy(true);
             try {
                 const data = await uploadMyAvatar(token, file);
-                if (data?.user) setUser(data.user);
+                if (data?.user) setProfile(data.user);
 
                 showToast("Zaktualizowano avatar", "success");
             } catch (err) {
@@ -231,7 +261,7 @@ export default function UserPage() {
         setAvatarBusy(true);
         try {
             const data = await deleteMyAvatar(token); // <-- { message, user } (warto tak samo zwracać)
-            if (data?.user) setUser(data.user);
+            if (data?.user) setProfile(data.user);
 
             showToast("Usunięto avatar", "success");
         } catch (err) {
@@ -249,7 +279,7 @@ export default function UserPage() {
         );
     }
 
-    if (loading) return <div style={styles.page}>Ładowanie…</div>;
+    if (loading || !profile) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
 
     return (
@@ -299,30 +329,30 @@ export default function UserPage() {
                         <div style={styles.kicker}>PROFIL</div>
 
                         <h1 style={styles.h1} title={user?.userName || "Użytkownik"}>
-                            {user?.userName || "Użytkownik"}
+                            {profile?.userName || "Użytkownik"}
                         </h1>
 
                         <div style={styles.metaLine}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Mail size={14} style={{ display: "block", opacity: 0.85 }} />
-          <span style={{ opacity: 0.9 }}>{user?.email || "—"}</span>
-        </span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <Mail size={14} style={{ display: "block", opacity: 0.85 }} />
+                                <span style={{ opacity: 0.9 }}>{profile?.email || "—"}</span>
+                            </span>
 
                             <span style={{ opacity: 0.65 }}> • </span>
 
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Shield size={14} style={{ display: "block", opacity: 0.85 }} />
-          <span style={{ opacity: 0.9 }}>
-            {user?.role?.roleName || roleName || "User"}
-          </span>
-        </span>
+                                <Shield size={14} style={{ display: "block", opacity: 0.85 }} />
+                                <span style={{ opacity: 0.9 }}>
+                                    {user?.role?.roleName || roleName || "User"}
+                                </span>
+                            </span>
 
                             <span style={{ opacity: 0.65 }}> • </span>
 
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Calendar size={14} style={{ display: "block", opacity: 0.85 }} />
-          <span style={{ opacity: 0.9 }}>{createdAtLabel}</span>
-        </span>
+                                <Calendar size={14} style={{ display: "block", opacity: 0.85 }} />
+                                <span style={{ opacity: 0.9 }}>{createdAtLabel}</span>
+                            </span>
 
                             <span style={{ opacity: 0.65 }}> • </span>
 
@@ -441,6 +471,31 @@ export default function UserPage() {
                     </div>
                 </div>
             </div>
+
+            {/* DANGER ZONE */}
+            {profile?.roleID !== ADMIN_ROLE_ID ? (
+                <div style={styles.dangerZone}>
+                    <div style={styles.dangerTitle}>Strefa zagrożenia</div>
+
+                    <p style={styles.dangerText}>
+                        Dezaktywacja konta spowoduje wylogowanie i zablokowanie dostępu do konta.
+                        Operacja jest <strong>odwracalna tylko przez administrację</strong>.
+                    </p>
+
+                    <button
+                        type="button"
+                        onClick={handleDeactivate}
+                        disabled={busy}
+                        style={{
+                            ...styles.dangerBtn,
+                            opacity: busy ? 0.6 : 1,
+                            cursor: busy ? "not-allowed" : "pointer",
+                        }}
+                    >
+                        Dezaktywuj konto
+                    </button>
+                </div>
+            ) : null}
 
             {/* EDIT PROFILE MODAL */}
             {editOpen ? (
@@ -741,5 +796,35 @@ const styles = {
         display: "flex",
         justifyContent: "flex-end",
         gap: 10,
+    },
+
+    dangerZone: {
+        marginTop: 40,
+        padding: 16,
+        borderRadius: 14,
+        border: "1px solid #5a2a2a",
+        background: "#1a0f0f",
+    },
+
+    dangerTitle: {
+        fontWeight: 900,
+        color: "#ffb4b4",
+        marginBottom: 8,
+    },
+
+    dangerText: {
+        fontSize: 13,
+        opacity: 0.9,
+        marginBottom: 12,
+        lineHeight: 1.5,
+    },
+
+    dangerBtn: {
+        borderRadius: 12,
+        border: "1px solid #7a2a2a",
+        background: "#2a1515",
+        color: "#ffb4b4",
+        padding: "10px 14px",
+        fontWeight: 900,
     },
 };

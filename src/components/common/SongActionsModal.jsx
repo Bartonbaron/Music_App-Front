@@ -17,7 +17,6 @@ onAddToPlaylist, onRemoveFromCurrent, onAddToQueue, onPlayNext, busy = false }) 
                 </div>
 
                 <div style={styles.buttons}>
-                    {/* ✅ kolejka tylko jeśli nie hidden */}
                     {!hidden && typeof onPlayNext === "function" ? (
                         <button
                             type="button"

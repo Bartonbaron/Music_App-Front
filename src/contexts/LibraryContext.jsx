@@ -110,6 +110,7 @@ export function LibraryProvider({ children }) {
     const { token, user } = useAuth();
     const isCreatorRole = pickRoleName(user) === "Creator";
 
+    const [folders, setFolders] = useState([]);
     const [albums, setAlbums] = useState([]);
     const [playlists, setPlaylists] = useState([]);
     const [favoriteSongs, setFavoriteSongs] = useState([]);
@@ -121,6 +122,7 @@ export function LibraryProvider({ children }) {
     const abortRef = useRef(null);
 
     const reset = useCallback(() => {
+        setFolders([]);
         setAlbums([]);
         setPlaylists([]);
         setFavoriteSongs([]);
@@ -147,6 +149,10 @@ export function LibraryProvider({ children }) {
 
         try {
             const requests = [
+                fetch("http://localhost:3000/api/folders", {
+                    headers: { Authorization: `Bearer ${token}` },
+                    signal: ac.signal,
+                }),
                 fetch("http://localhost:3000/api/libraries/liked-songs", {
                     headers: { Authorization: `Bearer ${token}` },
                     signal: ac.signal,
@@ -176,22 +182,25 @@ export function LibraryProvider({ children }) {
 
             const resArr = await Promise.all(requests);
 
-            const likedRes = resArr[0];
-            const favPodsRes = resArr[1];
-            const albumsRes = resArr[2];
-            const playlistsRes = resArr[3];
-            const myCreatorRes = isCreatorRole ? resArr[4] : null;
+            const foldersRes = resArr[0];
+            const likedRes = resArr[1];
+            const favPodsRes = resArr[2];
+            const albumsRes = resArr[3];
+            const playlistsRes = resArr[4];
+            const myCreatorRes = isCreatorRole ? resArr[5] : null;
 
             const likedData = await likedRes.json().catch(() => ({}));
             const favPodsData = await favPodsRes.json().catch(() => ({}));
             const albumsData = await albumsRes.json().catch(() => ({}));
             const playlistsData = await playlistsRes.json().catch(() => ({}));
+            const foldersData = await foldersRes.json().catch(() => ({}));
             const myCreatorData = myCreatorRes ? await myCreatorRes.json().catch(() => ({})) : null;
 
             if (!likedRes.ok) throw new Error(likedData?.message || "Failed to fetch liked songs");
             if (!favPodsRes.ok) throw new Error(favPodsData?.message || "Failed to fetch favorite podcasts");
             if (!albumsRes.ok) throw new Error(albumsData?.message || "Failed to fetch library albums");
             if (!playlistsRes.ok) throw new Error(playlistsData?.message || "Failed to fetch library playlists");
+            if (!foldersRes.ok) throw new Error(foldersData?.message || "Failed to fetch folders");
             let creatorOk = true;
 
             if (myCreatorRes && !myCreatorRes.ok) {
@@ -227,6 +236,17 @@ export function LibraryProvider({ children }) {
 
             setPlaylists(playlistsNorm);
 
+            const foldersNorm = (Array.isArray(foldersData) ? foldersData : [])
+                .filter(Boolean)
+                .map((f) => ({
+                    folderID: f.folderID,
+                    folderName: f.folderName || "Folder",
+                    userID: f.userID,
+                    createdAt: f.createdAt,
+                }));
+
+            setFolders(foldersNorm);
+
             // ALBUMS (merge library + creator albums)
             const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData?.albums || [];
             const creatorAlbumsRaw = creatorOk ? (myCreatorData?.albums || []) : [];
@@ -245,6 +265,7 @@ export function LibraryProvider({ children }) {
             setError(e?.message || "Library error");
 
             // By nie zostawały stare dane po błędzie
+            setFolders([]);
             setAlbums([]);
             setPlaylists([]);
             setFavoriteSongs([]);
@@ -386,6 +407,9 @@ export function LibraryProvider({ children }) {
 
     const value = useMemo(
         () => ({
+            folders,
+            setFolders,
+
             albums,
             playlists,
 
@@ -405,6 +429,7 @@ export function LibraryProvider({ children }) {
             togglePlaylistInLibrary,
         }),
         [
+            folders,
             albums,
             playlists,
             favoriteSongs,

@@ -36,6 +36,7 @@ import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminReportsDetailsPage from "./pages/admin/AdminReportsDetailsPage";
 import QueuePage from "./pages/player/QueuePage.jsx";
 import FeedPage from "./pages/FeedPage.jsx";
+import FolderPage from "./pages/folders/FolderPage.jsx";
 
 import "./index.css";
 
@@ -73,6 +74,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/creators/:id" element={<PublicCreatorPage />} />
                             <Route path="/queue" element={<QueuePage />} />
                             <Route path="/feed" element={<FeedPage />} />
+                            <Route path="/folders/:id" element={<FolderPage />} />
 
                             {/* Tylko administrator */}
                             <Route element={<AdminRoute />}>

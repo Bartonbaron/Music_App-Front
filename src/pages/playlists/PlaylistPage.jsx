@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, Trash2, Play, Flag, Music } from "lucide-react";
+import { Plus, Trash2, Play, Flag, ListMusic } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -880,7 +880,7 @@ export default function PlaylistPage() {
                         <img src={playlistCover} alt="cover" style={styles.coverImg} />
                     ) : (
                         <div style={styles.coverPlaceholder}>
-                            <Music size={46} style={{ opacity: 0.85 }} />
+                            <ListMusic size={46} style={{ opacity: 0.85 }} />
                         </div>
                     )}
                 </div>

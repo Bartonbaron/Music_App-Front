@@ -149,12 +149,12 @@ export default function PublicCreatorPage() {
     // playable queues
     const songsPlayable = useMemo(() => {
         return songsRaw
-            .map((s) => ({
-                ...s,
-                creatorName: s.creatorName ?? creatorName,
-            }))
+            .map((s) => ({ ...s, creatorName: s.creatorName ?? creatorName }))
             .map(mapSongToPlayerItem)
-            .filter((x) => !!x?.signedAudio);
+            .filter((x) => {
+                const status = String(x?.moderationStatus || "ACTIVE").toUpperCase();
+                return !!x?.signedAudio && status !== "HIDDEN";
+            });
     }, [songsRaw, creatorName]);
 
     const podcastsPlayable = useMemo(() => {
@@ -162,9 +162,10 @@ export default function PublicCreatorPage() {
             .map((p) => ({
                 ...p,
                 creatorName: p.creatorName ?? creatorName,
+                moderationStatus: p?.moderationStatus ?? "ACTIVE",
             }))
             .map(mapPodcastToPlayerItem)
-            .filter((x) => !!x?.signedAudio);
+            .filter((x) => !!x?.signedAudio && String(x?.moderationStatus).toUpperCase() !== "HIDDEN");
     }, [podcastsRaw, creatorName]);
 
     const canPlayAllSongs = songsPlayable.length > 0;
@@ -390,17 +391,33 @@ export default function PublicCreatorPage() {
                                     const name = pickAlbumName(a);
                                     const albumID = a?.albumID ?? a?.id;
 
+                                    const hidden = String(a?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                                    const statusLabel = hidden ? "HIDDEN" : null;
+
+                                    const go = () => {
+                                        if (hidden || !albumID) return;
+                                        navigate(`/albums/${albumID}`);
+                                    };
+
                                     return (
                                         <div
                                             key={albumID ?? name}
-                                            style={styles.gridCard}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => navigate(`/albums/${albumID}`)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" || e.key === " ") navigate(`/albums/${albumID}`);
+                                            style={{
+                                                ...styles.gridCard,
+                                                ...(hidden ? styles.rowDisabled : null),
+                                                cursor: hidden ? "not-allowed" : "pointer",
                                             }}
-                                            title={name}
+                                            role="button"
+                                            tabIndex={hidden ? -1 : 0}
+                                            onClick={go}
+                                            onKeyDown={(e) => {
+                                                if (hidden) return;
+                                                if (e.key === "Enter" || e.key === " ") {
+                                                    e.preventDefault();
+                                                    go();
+                                                }
+                                            }}
+                                            title={hidden ? "Album ukryty przez administrację" : name}
                                         >
                                             <div style={styles.gridCardTop}>
                                                 {cover ? (
@@ -414,7 +431,14 @@ export default function PublicCreatorPage() {
                                                 ) : (
                                                     <div style={styles.gridCoverPh} />
                                                 )}
+
+                                                {statusLabel ? (
+                                                    <div style={styles.badgePill} title={statusLabel}>
+                                                        {statusLabel}
+                                                    </div>
+                                                ) : null}
                                             </div>
+
                                             <div style={styles.gridName}>{name}</div>
                                         </div>
                                     );
@@ -440,17 +464,33 @@ export default function PublicCreatorPage() {
                                     const name = pickPlaylistName(p);
                                     const playlistID = p?.playlistID ?? p?.id;
 
+                                    const hidden = String(p?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                                    const statusLabel = hidden ? "HIDDEN" : null;
+
+                                    const go = () => {
+                                        if (hidden || !playlistID) return;
+                                        navigate(`/playlists/${playlistID}`);
+                                    };
+
                                     return (
                                         <div
                                             key={playlistID ?? name}
-                                            style={styles.gridCard}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => navigate(`/playlists/${playlistID}`)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" || e.key === " ") navigate(`/playlists/${playlistID}`);
+                                            style={{
+                                                ...styles.gridCard,
+                                                ...(hidden ? styles.rowDisabled : null),
+                                                cursor: hidden ? "not-allowed" : "pointer",
                                             }}
-                                            title={name}
+                                            role="button"
+                                            tabIndex={hidden ? -1 : 0}
+                                            onClick={go}
+                                            onKeyDown={(e) => {
+                                                if (hidden) return;
+                                                if (e.key === "Enter" || e.key === " ") {
+                                                    e.preventDefault();
+                                                    go();
+                                                }
+                                            }}
+                                            title={hidden ? "Playlista ukryta przez administrację" : name}
                                         >
                                             <div style={styles.gridCardTop}>
                                                 {cover ? (
@@ -464,7 +504,14 @@ export default function PublicCreatorPage() {
                                                 ) : (
                                                     <div style={styles.gridCoverPh} />
                                                 )}
+
+                                                {statusLabel ? (
+                                                    <div style={styles.badgePill} title={statusLabel}>
+                                                        {statusLabel}
+                                                    </div>
+                                                ) : null}
                                             </div>
+
                                             <div style={styles.gridName}>{name}</div>
                                         </div>
                                     );
@@ -486,26 +533,58 @@ export default function PublicCreatorPage() {
                         ) : (
                             <div style={styles.list}>
                                 {songsRaw.map((s, idx) => {
-                                    const playable = songsPlayable.some((x) => String(x.songID) === String(s.songID));
+
+                                    const hidden = String(s?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                                    const playable = !hidden && songsPlayable.some((x) => String(x.songID) === String(s.songID));
+
+
                                     const cover = s?.signedCover || s?.coverURL || null;
 
+                                    const statusLabel = hidden
+                                        ? "Ukryty"
+                                        : playable
+                                            ? null
+                                            : "Brak audio";
+
                                     return (
-                                        <div key={s.songID ?? idx} style={styles.row}>
+                                        <div
+                                            key={s.songID ?? idx}
+                                            style={{
+                                                ...styles.row,
+                                                ...(hidden ? styles.rowDisabled : null),
+                                            }}
+                                        >
+                                            {/* PLAY */}
                                             <button
                                                 type="button"
-                                                onClick={() => onPlaySongAt(s.songID)}
+                                                onClick={() => {
+                                                    if (!playable) return;
+                                                    onPlaySongAt(s.songID);
+                                                }}
                                                 disabled={!playable}
                                                 style={{
                                                     ...styles.rowPlayBtn,
                                                     opacity: playable ? 1 : 0.45,
                                                     cursor: playable ? "pointer" : "not-allowed",
                                                 }}
-                                                title={playable ? "Odtwórz" : "Brak audio"}
+                                                title={
+                                                    hidden
+                                                        ? "Utwór ukryty przez administrację"
+                                                        : playable
+                                                            ? "Odtwórz"
+                                                            : "Brak audio"
+                                                }
                                             >
                                                 ▶
                                             </button>
 
-                                            <div style={styles.miniCoverWrap}>
+                                            {/* COVER */}
+                                            <div
+                                                style={{
+                                                    ...styles.miniCoverWrap,
+                                                    ...(hidden ? styles.miniCoverDisabled : null),
+                                                }}
+                                            >
                                                 {cover ? (
                                                     <img
                                                         src={cover}
@@ -519,28 +598,68 @@ export default function PublicCreatorPage() {
                                                 )}
                                             </div>
 
+                                            {/* MAIN */}
                                             <div style={styles.trackMain}>
                                                 <div
-                                                    style={styles.trackTitleLink}
+                                                    style={{
+                                                        ...styles.trackTitleLink,
+                                                        ...(hidden ? styles.rowTitleDisabled : null),
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 10,
+                                                        cursor: hidden ? "not-allowed" : "pointer",
+                                                    }}
                                                     role="button"
-                                                    tabIndex={0}
-                                                    title="Otwórz szczegóły"
+                                                    tabIndex={hidden ? -1 : 0}
+                                                    title={hidden ? "Utwór ukryty przez administrację" : "Otwórz szczegóły"}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        if (hidden) return;
                                                         navigate(`/songs/${s.songID}`);
                                                     }}
                                                     onKeyDown={(e) => {
                                                         if (e.key === "Enter" || e.key === " ") {
                                                             e.preventDefault();
                                                             e.stopPropagation();
+                                                            if (hidden) return;
                                                             navigate(`/songs/${s.songID}`);
                                                         }
                                                     }}
                                                 >
+                                                <span
+                                                    style={{
+                                                        minWidth: 0,
+                                                        overflow: "hidden",
+                                                        textOverflow: "ellipsis",
+                                                        whiteSpace: "nowrap",
+                                                    }}
+                                                    >
                                                     {s.songName || "Utwór"}
+                                                    </span>
+
+                                                    {statusLabel ? (
+                                                        <span
+                                                            style={{
+                                                                fontSize: 12,
+                                                                fontWeight: 900,
+                                                                padding: "4px 8px",
+                                                                borderRadius: 999,
+                                                                border: "1px solid #333",
+                                                                background: "#121212",
+                                                                opacity: 0.85,
+                                                                flex: "0 0 auto",
+                                                            }}
+                                                            title={statusLabel}
+                                                        >
+                                                            {statusLabel}
+                                                        </span>
+                                                    ) : null}
                                                 </div>
 
-                                                <div style={styles.trackSub}>{formatTrackDuration(s.duration)}</div>
+                                                <div style={styles.trackSub}>
+                                                    {formatTrackDuration(s.duration)}
+                                                    {hidden ? <span style={{ opacity: 0.65 }}> • niedostępny</span> : null}
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -562,23 +681,39 @@ export default function PublicCreatorPage() {
                         ) : (
                             <div style={styles.list}>
                                 {podcastsRaw.map((p, idx) => {
-                                    const playable = podcastsPlayable.some(
-                                        (x) => String(x.podcastID) === String(p.podcastID)
-                                    );
+                                    const hidden = String(p?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                                    const playable = !hidden && podcastsPlayable.some((x) => String(x.podcastID) === String(p.podcastID));
+
                                     const cover = p?.signedCover || p?.coverURL || null;
+                                    const statusLabel = hidden ? "Ukryty" : null;
 
                                     return (
-                                        <div key={p.podcastID ?? idx} style={styles.row}>
+                                        <div
+                                            key={p.podcastID ?? idx}
+                                            style={{
+                                                ...styles.row,
+                                                ...(hidden ? styles.rowDisabled : null),
+                                            }}
+                                        >
                                             <button
                                                 type="button"
-                                                onClick={() => onPlayPodcastAt(p.podcastID)}
+                                                onClick={() => {
+                                                    if (!playable) return;
+                                                    onPlayPodcastAt(p.podcastID);
+                                                }}
                                                 disabled={!playable}
                                                 style={{
                                                     ...styles.rowPlayBtn,
                                                     opacity: playable ? 1 : 0.45,
                                                     cursor: playable ? "pointer" : "not-allowed",
                                                 }}
-                                                title={playable ? "Odtwórz" : "Brak audio"}
+                                                title={
+                                                    hidden
+                                                        ? "Podcast ukryty przez administrację"
+                                                        : playable
+                                                            ? "Odtwórz"
+                                                            : "Brak audio"
+                                                }
                                             >
                                                 ▶
                                             </button>
@@ -599,25 +734,59 @@ export default function PublicCreatorPage() {
 
                                             <div style={styles.trackMain}>
                                                 <div
-                                                    style={styles.trackTitleLink}
+                                                    style={{
+                                                        ...styles.trackTitleLink,
+                                                        cursor: hidden ? "not-allowed" : "pointer",
+                                                        pointerEvents: hidden ? "none" : "auto",
+                                                        opacity: hidden ? 0.9 : 1,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 10,
+                                                    }}
                                                     role="button"
                                                     tabIndex={0}
-                                                    title="Otwórz szczegóły"
+                                                    title={hidden ? "Podcast ukryty przez moderację" : "Otwórz szczegóły"}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        if (hidden) return;
                                                         navigate(`/podcasts/${p.podcastID}`);
                                                     }}
                                                     onKeyDown={(e) => {
                                                         if (e.key === "Enter" || e.key === " ") {
                                                             e.preventDefault();
                                                             e.stopPropagation();
+                                                            if (hidden) return;
                                                             navigate(`/podcasts/${p.podcastID}`);
                                                         }
                                                     }}
                                                 >
+                                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                                     {p.podcastName || "Podcast"}
+                                                </span>
+
+                                                    {statusLabel ? (
+                                                        <span
+                                                            style={{
+                                                                fontSize: 12,
+                                                                fontWeight: 900,
+                                                                padding: "4px 8px",
+                                                                borderRadius: 999,
+                                                                border: "1px solid #333",
+                                                                background: "#121212",
+                                                                opacity: 0.9,
+                                                                flex: "0 0 auto",
+                                                            }}
+                                                            title={statusLabel}
+                                                        >
+                                                        {statusLabel}
+                                                        </span>
+                                                    ) : null}
                                                 </div>
-                                                <div style={styles.trackSub}>{formatTrackDuration(p.duration)}</div>
+
+                                                <div style={styles.trackSub}>
+                                                    {formatTrackDuration(p.duration)}
+                                                    {hidden ? <span style={{ opacity: 0.65 }}> • niedostępny</span> : null}
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -897,6 +1066,20 @@ const styles = {
         textOverflow: "ellipsis",
         cursor: "pointer",
         textDecoration: "none",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.2)",
+    },
+
+    rowTitleDisabled: {
+        opacity: 0.85,
+    },
+
+    miniCoverDisabled: {
+        opacity: 0.65,
+        filter: "grayscale(0.5)",
     },
 
     miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },

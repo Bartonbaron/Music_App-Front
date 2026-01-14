@@ -8,6 +8,7 @@ import {
     useState,
 } from "react";
 import { useAuth } from "./AuthContext";
+import { deleteFolder as apiDeleteFolder } from "../api/folders.api";
 
 const LibraryContext = createContext(null);
 
@@ -131,6 +132,30 @@ export function LibraryProvider({ children }) {
         setError("");
     }, []);
 
+    // ====== FOLDERS: local helpers ======
+    const removeFolderLocal = useCallback((folderID) => {
+        if (folderID == null) return;
+        setFolders((prev) => (prev || []).filter((f) => String(f.folderID) !== String(folderID)));
+    }, []);
+
+    const addFolderLocal = useCallback((folder) => {
+        if (!folder?.folderID) return;
+        setFolders((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const exists = list.some((f) => String(f.folderID) === String(folder.folderID));
+            if (exists) return list;
+            return [
+                {
+                    folderID: folder.folderID,
+                    folderName: folder.folderName || "Folder",
+                    userID: folder.userID,
+                    createdAt: folder.createdAt,
+                },
+                ...list,
+            ];
+        });
+    }, []);
+
     const refetch = useCallback(async () => {
         if (!token) return;
 
@@ -201,41 +226,29 @@ export function LibraryProvider({ children }) {
             if (!albumsRes.ok) throw new Error(albumsData?.message || "Failed to fetch library albums");
             if (!playlistsRes.ok) throw new Error(playlistsData?.message || "Failed to fetch library playlists");
             if (!foldersRes.ok) throw new Error(foldersData?.message || "Failed to fetch folders");
-            let creatorOk = true;
 
+            let creatorOk = true;
             if (myCreatorRes && !myCreatorRes.ok) {
-                // po degradacji: 403 jest oczekiwane -> ignorujemy i dalej bez creatorAlbums
-                if (myCreatorRes.status === 403) {
-                    creatorOk = false;
-                } else {
-                    throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
-                }
+                if (myCreatorRes.status === 403) creatorOk = false;
+                else throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
             }
 
             // LIKED SONGS
             const likedRaw = Array.isArray(likedData) ? likedData : likedData?.songs || [];
-            const likedNorm = (likedRaw || [])
-                .map(normalizeFavSongRow)
-                .filter((x) => x?.songID != null);
-
+            const likedNorm = (likedRaw || []).map(normalizeFavSongRow).filter((x) => x?.songID != null);
             setFavoriteSongs(likedNorm);
 
             // FAVORITE PODCASTS
             const podsRaw = Array.isArray(favPodsData) ? favPodsData : favPodsData?.podcasts || [];
-            const podsNorm = (podsRaw || [])
-                .map(normalizeFavPodcastRow)
-                .filter((x) => x?.podcastID != null);
-
+            const podsNorm = (podsRaw || []).map(normalizeFavPodcastRow).filter((x) => x?.podcastID != null);
             setFavoritePodcasts(podsNorm);
 
             // PLAYLISTS
             const playlistsRaw = Array.isArray(playlistsData) ? playlistsData : playlistsData?.playlists || [];
-            const playlistsNorm = (playlistsRaw || [])
-                .map(normalizePlaylist)
-                .filter((p) => p?.playlistID != null);
-
+            const playlistsNorm = (playlistsRaw || []).map(normalizePlaylist).filter((p) => p?.playlistID != null);
             setPlaylists(playlistsNorm);
 
+            // FOLDERS
             const foldersNorm = (Array.isArray(foldersData) ? foldersData : [])
                 .filter(Boolean)
                 .map((f) => ({
@@ -244,20 +257,16 @@ export function LibraryProvider({ children }) {
                     userID: f.userID,
                     createdAt: f.createdAt,
                 }));
-
             setFolders(foldersNorm);
 
             // ALBUMS (merge library + creator albums)
             const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData?.albums || [];
-            const creatorAlbumsRaw = creatorOk ? (myCreatorData?.albums || []) : [];
+            const creatorAlbumsRaw = creatorOk ? myCreatorData?.albums || [] : [];
 
             const libraryAlbums = (libraryAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "library" }));
             const creatorAlbums = (creatorAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "creator" }));
 
-            const mergedAlbums = (isCreatorRole && creatorOk)
-                ? mergeAlbumsUnique(libraryAlbums, creatorAlbums)
-                : libraryAlbums;
-
+            const mergedAlbums = isCreatorRole && creatorOk ? mergeAlbumsUnique(libraryAlbums, creatorAlbums) : libraryAlbums;
             setAlbums(mergedAlbums);
         } catch (e) {
             if (e?.name === "AbortError") return;
@@ -275,6 +284,30 @@ export function LibraryProvider({ children }) {
         }
     }, [token, isCreatorRole]);
 
+    // NEW: delete folder via api helper + local state update
+    const deleteFolder = useCallback(
+        async (folderID, opts = { refetchAfter: false }) => {
+            if (!token) return { success: false, message: "Brak tokenu" };
+            if (!folderID) return { success: false, message: "Brak folderID" };
+
+            try {
+                await apiDeleteFolder(token, folderID);
+
+                // sidebar aktualizuje się natychmiast
+                removeFolderLocal(folderID);
+
+                if (opts?.refetchAfter) {
+                    await refetch();
+                }
+
+                return { success: true };
+            } catch (e) {
+                return { success: false, message: e?.message || "Nie udało się usunąć folderu" };
+            }
+        },
+        [token, removeFolderLocal, refetch]
+    );
+
     // LIKED SONGS
     const toggleSongLike = useCallback(
         async (songID, isLiked) => {
@@ -282,13 +315,10 @@ export function LibraryProvider({ children }) {
             if (!songID) return { success: false, message: "Brak songID" };
 
             try {
-                const res = await fetch(
-                    `http://localhost:3000/api/songs/${songID}/${isLiked ? "unlike" : "like"}`,
-                    {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${token}` },
-                    }
-                );
+                const res = await fetch(`http://localhost:3000/api/songs/${songID}/${isLiked ? "unlike" : "like"}`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                });
 
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) return { success: false, message: data?.message || "Like update failed" };
@@ -336,9 +366,7 @@ export function LibraryProvider({ children }) {
                 );
 
                 const data = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    return { success: false, message: data?.message || "Favorite update failed" };
-                }
+                if (!res.ok) return { success: false, message: data?.message || "Favorite update failed" };
 
                 await refetch();
                 return { success: true };
@@ -409,6 +437,9 @@ export function LibraryProvider({ children }) {
         () => ({
             folders,
             setFolders,
+            removeFolderLocal,
+            addFolderLocal,
+            deleteFolder,
 
             albums,
             playlists,
@@ -430,6 +461,9 @@ export function LibraryProvider({ children }) {
         }),
         [
             folders,
+            removeFolderLocal,
+            addFolderLocal,
+            deleteFolder,
             albums,
             playlists,
             favoriteSongs,

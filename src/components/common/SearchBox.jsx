@@ -255,7 +255,7 @@ export function SearchBox() {
             else if (item.type === "album") navigate(`/albums/${item.id}`);
             else if (item.type === "playlist") navigate(`/playlists/${item.id}`);
             else if (item.type === "user") navigate(`/users/${item.id}`);
-            else if (item.type === "creator") navigate(`/users/${item.userID ?? item.id}`);
+            else if (item.type === "creator") navigate(`/creators/${item.id}`);
         },
         [navigate]
     );

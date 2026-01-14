@@ -301,11 +301,19 @@ export default function CreatorSongsManager({ songs = [], onChanged }) {
                         const cover = pickSongCover(s);
                         const title = pickSongTitle(s);
                         const dur = pickDuration(s?.duration);
-
+                        const hidden = String(s?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                        const statusLabel = hidden ? "Ukryty" : null;
                         const isDel = deletingID != null && String(id) === String(deletingID);
 
                         return (
-                            <div key={id ?? title} style={styles.row}>
+                            <div
+                                key={id ?? title}
+                                style={{
+                                    ...styles.row,
+                                    ...(hidden ? styles.rowDisabled : null),
+                                }}
+                            >
+                                {/* 1. COVER */}
                                 <div style={styles.cover}>
                                     {cover ? (
                                         <img
@@ -320,34 +328,77 @@ export default function CreatorSongsManager({ songs = [], onChanged }) {
                                     )}
                                 </div>
 
+                                {/* 2. TEXT CONTENT (Title + Subtitle) */}
                                 <div style={{ minWidth: 0, flex: 1 }}>
+                                    {/* KLIKALNY WIERSZ TYTUŁU */}
                                     <div
-                                        style={styles.rowTitleLink}
-                                        title="Przejdź do szczegółów"
+                                        style={{
+                                            ...styles.rowTitleLink,
+                                            cursor: hidden ? "not-allowed" : "pointer",
+                                            opacity: hidden ? 0.9 : 1,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            minWidth: 0,
+                                        }}
+                                        title={hidden ? "Utwór ukryty przez moderację" : "Przejdź do szczegółów"}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => navigate(`/songs/${id}`)}
+                                        onClick={() => {
+                                            if (hidden) return;
+                                            navigate(`/songs/${id}`);
+                                        }}
                                         onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") navigate(`/songs/${id}`);
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                if (hidden) return;
+                                                navigate(`/songs/${id}`);
+                                            }
                                         }}
                                     >
-                                        {title}{" "}
-                                        <ExternalLink size={14} style={{ display: "inline-block", opacity: 0.85 }} />
+                                    <span style={{
+                                        minWidth: 0,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap"
+                                    }}>
+                                    {title}{" "}
+                                    <ExternalLink
+                                        size={14}
+                                        style={{
+                                            display: "inline-block",
+                                            opacity: hidden ? 0.35 : 0.85
+                                        }}
+                                    />
+                                    </span>
+
+                                        {statusLabel ? (
+                                            <span style={styles.badgePill} title="Utwór ukryty przez moderację">
+                                                {statusLabel}
+                                            </span>
+                                        ) : null}
                                     </div>
 
+                                    {/* PODTYTUŁ (POZA KLIKALNYM TYTUŁEM) */}
                                     <div style={styles.rowSub}>
                                         <span>{dur}</span>
-                                        {s?.genre?.genreName ? (
+                                        {s?.genre?.genreName && (
                                             <>
                                                 <span style={{ opacity: 0.45 }}> • </span>
                                                 <span>{s.genre.genreName}</span>
                                             </>
-                                        ) : null}
+                                        )}
                                     </div>
                                 </div>
 
+                                {/* 3. BUTTONS */}
                                 <div style={styles.rowBtns}>
-                                    <button type="button" onClick={() => openEdit(s)} style={styles.editBtn} title="Edytuj">
+                                    <button
+                                        type="button"
+                                        onClick={() => openEdit(s)}
+                                        style={styles.editBtn}
+                                        title="Edytuj"
+                                    >
                                         <Pencil size={16} style={{ display: "block" }} />
                                     </button>
 
@@ -836,5 +887,21 @@ const styles = {
         color: "white",
         fontWeight: 800,
         cursor: "pointer",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.25)",
+    },
+
+    badgePill: {
+        fontSize: 12,
+        fontWeight: 900,
+        padding: "4px 8px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#121212",
+        opacity: 0.9,
+        flex: "0 0 auto",
     },
 };

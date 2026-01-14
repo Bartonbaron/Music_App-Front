@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Folder as FolderIcon, Plus, Pencil, Trash2, X } from "lucide-react";
+import { ArrowLeft, Folder as FolderIcon, Pencil, Trash2, X, Plus } from "lucide-react";
+
 import { apiFetch } from "../../api/http";
 import { useAuth } from "../../contexts/AuthContext";
+import { useLibrary } from "../../contexts/LibraryContext";
+
+import AddPlaylistToFolderModal from "../../components/common/AddPlaylistToFolderModal";
 
 function pickPlaylistCover(p) {
     return p?.signedCover || p?.coverSigned || p?.signedCoverURL || p?.coverURL || null;
@@ -17,13 +21,17 @@ export default function FolderPage() {
     const navigate = useNavigate();
     const { token } = useAuth();
 
+    const { deleteFolder, playlists: libraryPlaylists } = useLibrary();
+
     const [folder, setFolder] = useState(null);
     const [rows, setRows] = useState([]); // [{ folderID, playlistID, playlist }]
     const [loading, setLoading] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
 
-    // trzymamy playlistID, którym cover się wywalił -> pokazujemy placeholder
+    // modal add playlist
+    const [addOpen, setAddOpen] = useState(false);
+
     const [brokenCovers, setBrokenCovers] = useState(() => new Set());
 
     const load = useCallback(async () => {
@@ -72,6 +80,22 @@ export default function FolderPage() {
         });
     }, [rows, id]);
 
+    // playlisty już w folderze (żeby nie proponować ich w modalu)
+    const existingPlaylistIds = useMemo(() => {
+        const set = new Set();
+        (rows || []).forEach((r) => {
+            const pid = r?.playlist?.playlistID ?? r?.playlistID;
+            if (pid != null) set.add(String(pid));
+        });
+        return set;
+    }, [rows]);
+
+    // opcje do modala: playlisty z biblioteki, których nie ma jeszcze w folderze
+    const addOptions = useMemo(() => {
+        const all = Array.isArray(libraryPlaylists) ? libraryPlaylists : [];
+        return all.filter((p) => p?.playlistID != null && !existingPlaylistIds.has(String(p.playlistID)));
+    }, [libraryPlaylists, existingPlaylistIds]);
+
     const handleRename = useCallback(async () => {
         if (!token || !id) return;
 
@@ -105,43 +129,33 @@ export default function FolderPage() {
         setError("");
 
         try {
-            await apiFetch(`/folders/${id}`, { token, method: "DELETE" });
+            const result = await deleteFolder(id);
+            if (!result?.success) throw new Error(result?.message || "Nie udało się usunąć folderu");
             navigate(-1);
         } catch (e) {
             setError(e?.message || "Nie udało się usunąć folderu");
         } finally {
             setBusy(false);
         }
-    }, [token, id, navigate]);
+    }, [token, id, deleteFolder, navigate]);
 
-    const handleAddPlaylist = useCallback(async () => {
-        if (!token || !id) return;
+    const handleAddFromModal = useCallback(
+        async (playlistID) => {
+            if (!token || !id || !playlistID) return;
 
-        const playlistID = window.prompt("Podaj ID playlisty do dodania:");
-        if (!playlistID) return;
+            const pid = Number(playlistID);
+            if (!Number.isFinite(pid) || pid <= 0) throw new Error("Nieprawidłowe ID playlisty");
 
-        const pid = Number(playlistID);
-        if (!Number.isFinite(pid) || pid <= 0) {
-            setError("Nieprawidłowe ID playlisty");
-            return;
-        }
-
-        setBusy(true);
-        setError("");
-
-        try {
             await apiFetch(`/folders/${id}/playlists`, {
                 token,
                 method: "POST",
                 body: { playlistID: pid },
             });
+
             await load();
-        } catch (e) {
-            setError(e?.message || "Nie udało się dodać playlisty do folderu");
-        } finally {
-            setBusy(false);
-        }
-    }, [token, id, load]);
+        },
+        [token, id, load]
+    );
 
     const handleRemovePlaylist = useCallback(
         async (playlistID) => {
@@ -184,6 +198,19 @@ export default function FolderPage() {
 
     return (
         <div style={styles.page}>
+            {/* MODAL: add playlist */}
+            <AddPlaylistToFolderModal
+                open={addOpen}
+                onClose={() => setAddOpen(false)}
+                folderName={folderTitle}
+                options={addOptions}
+                onAdd={handleAddFromModal}
+                busy={busy || loading}
+                onToast={(text, type) => {
+                    if (type === "error") setError(text);
+                }}
+            />
+
             {/* TOP BAR */}
             <div style={styles.topBar}>
                 <button type="button" onClick={() => navigate(-1)} style={styles.backBtn} title="Wstecz">
@@ -202,7 +229,7 @@ export default function FolderPage() {
                 <div style={styles.actions}>
                     <button
                         type="button"
-                        onClick={handleAddPlaylist}
+                        onClick={() => setAddOpen(true)}
                         disabled={busy || loading}
                         style={{
                             ...styles.btn,
@@ -433,7 +460,6 @@ const styles = {
     coverPh: { width: "100%", height: "100%", background: "#2a2a2a" },
 
     rowTitle: { fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-    rowSub: { fontSize: 12, opacity: 0.7 },
 
     openBtn: {
         borderRadius: 10,

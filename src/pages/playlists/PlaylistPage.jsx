@@ -63,6 +63,10 @@ export default function PlaylistPage() {
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
 
+    const [descEdit, setDescEdit] = useState(false);
+    const [descDraft, setDescDraft] = useState("");
+    const [descBusy, setDescBusy] = useState(false);
+
     const [savingLibrary, setSavingLibrary] = useState(false);
     const [toast, setToast] = useState(null);
 
@@ -180,6 +184,52 @@ export default function PlaylistPage() {
         if (isOwner) return true;
         return myCollabStatus === "ACCEPTED";
     }, [playlist, isOwner, myCollabStatus]);
+
+    // NEW: description handlers (owner OR accepted collab)
+    const startEditDesc = useCallback(() => {
+        if (!canEdit) return;
+        setDescDraft(playlist?.description || "");
+        setDescEdit(true);
+    }, [canEdit, playlist?.description]);
+
+    const cancelEditDesc = useCallback(() => {
+        setDescDraft(playlist?.description || "");
+        setDescEdit(false);
+    }, [playlist?.description]);
+
+    const saveDesc = useCallback(async () => {
+        if (!token || !playlist?.playlistID) return;
+        if (!canEdit) return;
+
+        const trimmed = String(descDraft || "").trim();
+
+        if (trimmed.length > 1000) {
+            showToast("Opis jest za długi (max 1000 znaków).", "error");
+            return;
+        }
+
+        setDescBusy(true);
+        try {
+            const resp = await apiFetch(`/playlists/${playlist.playlistID}`, {
+                token,
+                method: "PATCH",
+                body: { description: trimmed },
+            });
+
+            const updated = resp?.playlist;
+
+            // backend zwraca { message, playlist }, więc ustawiamy pewnie
+            setPlaylist((prev) => (prev ? { ...prev, description: updated?.description ?? trimmed } : prev));
+            setDescDraft(updated?.description ?? trimmed);
+
+            setDescEdit(false);
+            showToast("Zapisano opis", "success");
+        } catch (e) {
+            showToast(e?.message || "Nie udało się zapisać opisu", "error");
+        } finally {
+            setDescBusy(false);
+        }
+    }, [token, playlist?.playlistID, canEdit, descDraft, showToast]);
 
     const isInLibrary = useMemo(() => {
         return (libraryPlaylists || []).some((p) => String(p.playlistID) === String(id));
@@ -890,7 +940,69 @@ export default function PlaylistPage() {
 
                     <h2 style={styles.h2}>{playlist?.playlistName || "Playlista"}</h2>
 
-                    {playlist?.description ? <div style={styles.desc}>{playlist.description}</div> : null}
+                    <div style={styles.descBlock}>
+                        <div style={styles.descHeader}>
+                            <span style={styles.descLabel}>Opis</span>
+
+                            {canEdit && !descEdit ? (
+                                <button
+                                    type="button"
+                                    onClick={startEditDesc}
+                                    style={styles.descEditBtn}
+                                    disabled={reorderMode}
+                                    title="Edytuj opis"
+                                >
+                                    Edytuj
+                                </button>
+                            ) : null}
+                        </div>
+
+                        {!descEdit ? (
+                            <div style={styles.desc}>
+                                {playlist?.description?.trim()
+                                    ? playlist.description
+                                    : <span style={{ opacity: 0.7 }}>Brak opisu.</span>}
+                            </div>
+                        ) : (
+                            <div style={styles.descEditor}>
+                                <textarea
+                                    value={descDraft}
+                                    onChange={(e) => setDescDraft(e.target.value.slice(0, 1000))}
+                                    style={styles.descTextarea}
+                                    placeholder="Dodaj opis playlisty…"
+                                    disabled={descBusy}
+                                />
+
+                                <div style={styles.descFooter}>
+                                    <div style={styles.counter}>{descDraft.length}/1000</div>
+
+                                    <div style={{ display: "flex", gap: 10 }}>
+                                        <button
+                                            type="button"
+                                            onClick={cancelEditDesc}
+                                            style={styles.ghostBtn}
+                                            disabled={descBusy}
+                                        >
+                                            Anuluj
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={saveDesc}
+                                            style={{
+                                                ...styles.primaryBtn,
+                                                opacity: descBusy ? 0.6 : 1,
+                                                cursor: descBusy ? "not-allowed" : "pointer",
+                                            }}
+                                            disabled={descBusy}
+                                        >
+                                            Zapisz opis
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div style={styles.metaLine}>
                         {playlistOwner ? <span>{playlistOwner}</span> : <span style={{ opacity: 0.65 }}>—</span>}
@@ -1290,8 +1402,6 @@ const styles = {
     kicker: { opacity: 0.7, fontSize: 12, letterSpacing: 1 },
     h2: { margin: "6px 0 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
 
-    desc: { fontSize: 13, opacity: 0.85, marginBottom: 6, maxWidth: 720 },
-
     metaLine: { opacity: 0.85, fontSize: 13 },
 
     actions: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
@@ -1539,6 +1649,42 @@ const styles = {
         border: "1px solid #333",
         background: "#151515",
         flex: "0 0 auto",
+    },
+
+    descBlock: {
+        marginTop: 14,
+        maxWidth: 900,
+    },
+
+    descHeader: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 6,
+    },
+
+    descLabel: {
+        fontSize: 13,
+        letterSpacing: 1,
+        opacity: 0.6,
+        fontWeight: 800,
+        textTransform: "uppercase",
+    },
+
+    descEditBtn: {
+        padding: "6px 10px",
+        borderRadius: 8,
+        border: "1px solid #333",
+        background: "#1e1e1e",
+        color: "white",
+        fontWeight: 700,
+        cursor: "pointer",
+    },
+
+    desc: {
+        fontSize: 14,
+        lineHeight: 1.5,
+        opacity: 0.95,
     },
 
     miniCoverImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },

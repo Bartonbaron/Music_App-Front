@@ -11,15 +11,8 @@ function pickOwner(p) {
     return p?.user?.userName || p?.creatorName || p?.ownerName || "—";
 }
 
-export default function AddPlaylistToFolderModal({
-                                                     open,
-                                                     onClose,
-                                                     folderName,
-                                                     options = [],
-                                                     onAdd,
-                                                     busy = false,
-                                                     onToast,
-                                                 }) {
+export default function AddPlaylistToFolderModal({open, onClose, folderName,
+options = [], onAdd, busy = false, onToast,}) {
     const [q, setQ] = useState("");
     const [busyId, setBusyId] = useState(null);
     const [error, setError] = useState("");

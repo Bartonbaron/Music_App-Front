@@ -347,10 +347,20 @@ export default function CreatorPodcastsManager({ podcasts = [], onChanged }) {
                         const dur = pickDuration(p?.duration);
                         const topicName = pickTopicName(p);
 
+                        const hidden = String(p?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                        const statusLabel = hidden ? "Ukryty" : null;
+
                         const isDel = deletingID != null && String(id) === String(deletingID);
+                        const rowDisabled = hidden;
 
                         return (
-                            <div key={id ?? title} style={styles.row}>
+                            <div
+                                key={id ?? title}
+                                style={{
+                                    ...styles.row,
+                                    ...(rowDisabled ? styles.rowDisabled : null),
+                                }}
+                            >
                                 <div style={styles.cover}>
                                     {cover ? (
                                         <img
@@ -367,17 +377,51 @@ export default function CreatorPodcastsManager({ podcasts = [], onChanged }) {
 
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                     <div
-                                        style={styles.rowTitleLink}
-                                        title="Przejdź do szczegółów"
+                                        style={{
+                                            ...styles.rowTitleLink,
+                                            cursor: hidden ? "not-allowed" : "pointer",
+                                            opacity: hidden ? 0.9 : 1,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            minWidth: 0,
+                                        }}
+                                        title={hidden ? "Podcast ukryty przez moderację" : "Przejdź do szczegółów"}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => navigate(`/podcasts/${id}`)}
+                                        onClick={() => {
+                                            if (hidden) return;
+                                            navigate(`/podcasts/${id}`);
+                                        }}
                                         onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") navigate(`/podcasts/${id}`);
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                if (hidden) return;
+                                                navigate(`/podcasts/${id}`);
+                                            }
                                         }}
                                     >
+                                    <span style={{
+                                        minWidth: 0,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap"
+                                    }}>
                                         {title}{" "}
-                                        <ExternalLink size={14} style={{ display: "inline-block", opacity: 0.85 }} />
+                                        <ExternalLink
+                                            size={14}
+                                            style={{
+                                                display: "inline-block",
+                                                opacity: hidden ? 0.35 : 0.85
+                                            }}
+                                        />
+                                    </span>
+
+                                        {statusLabel ? (
+                                            <span style={styles.badgePill} title="Podcast ukryty przez moderację">
+                                                {statusLabel}
+                                            </span>
+                                        ) : null}
                                     </div>
 
                                     <div style={styles.rowSub}>
@@ -392,20 +436,30 @@ export default function CreatorPodcastsManager({ podcasts = [], onChanged }) {
                                 </div>
 
                                 <div style={styles.rowBtns}>
-                                    <button type="button" onClick={() => openEdit(p)} style={styles.editBtn} title="Edytuj">
+                                    <button
+                                        type="button"
+                                        onClick={() => openEdit(p)}
+                                        disabled={rowDisabled}
+                                        style={{
+                                            ...styles.editBtn,
+                                            opacity: rowDisabled ? 0.5 : 1,
+                                            cursor: rowDisabled ? "not-allowed" : "pointer",
+                                        }}
+                                        title={rowDisabled ? "Podcast ukryty – edycja zablokowana" : "Edytuj"}
+                                    >
                                         <Pencil size={16} style={{ display: "block" }} />
                                     </button>
 
                                     <button
                                         type="button"
                                         onClick={() => deletePodcast(id)}
-                                        disabled={isDel}
+                                        disabled={isDel || rowDisabled}
                                         style={{
                                             ...styles.delBtn,
-                                            opacity: isDel ? 0.6 : 1,
-                                            cursor: isDel ? "not-allowed" : "pointer",
+                                            opacity: isDel || rowDisabled ? 0.5 : 1,
+                                            cursor: isDel || rowDisabled ? "not-allowed" : "pointer",
                                         }}
-                                        title="Usuń"
+                                        title={rowDisabled ? "Podcast ukryty – usuwanie zablokowane" : "Usuń"}
                                     >
                                         <Trash2 size={16} style={{ display: "block" }} />
                                     </button>
@@ -935,5 +989,21 @@ const styles = {
         color: "white",
         fontWeight: 800,
         cursor: "pointer",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.25)",
+    },
+
+    badgePill: {
+        fontSize: 12,
+        fontWeight: 900,
+        padding: "4px 8px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#121212",
+        opacity: 0.9,
+        flex: "0 0 auto",
     },
 };

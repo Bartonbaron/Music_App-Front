@@ -34,8 +34,9 @@ export default function AppLayout() {
                 <main
                     style={{
                         ...styles.main,
-                        overflowY: lockMainScroll ? "hidden" : "auto",
+                        overflowY: "scroll",
                         scrollbarGutter: "stable",
+                        pointerEvents: lockMainScroll ? "none" : "auto",
                     }}
                 >
                     <div style={styles.content}>

@@ -192,8 +192,18 @@ export default function CreatorAlbumsManager({ albums = [], onChanged }) {
                         const title = pickAlbumTitle(a);
                         const cover = pickAlbumCover(a);
 
+                        const hidden = String(a?.moderationStatus || "ACTIVE").toUpperCase() === "HIDDEN";
+                        const statusLabel = hidden ? "Ukryty" : null;
+                        const rowDisabled = hidden;
+
                         return (
-                            <div key={id ?? title} style={styles.row}>
+                            <div
+                                key={id ?? title}
+                                style={{
+                                    ...styles.row,
+                                    ...(rowDisabled ? styles.rowDisabled : null),
+                                }}
+                            >
                                 <div style={styles.cover}>
                                     {cover ? (
                                         <img
@@ -209,20 +219,38 @@ export default function CreatorAlbumsManager({ albums = [], onChanged }) {
                                 </div>
 
                                 <div
-                                    style={styles.rowTitleLink}
+                                    style={{
+                                        ...styles.rowTitleLink,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 10,
+                                        minWidth: 0,
+                                    }}
                                     title="Przejdź do szczegółów"
                                     role="button"
                                     tabIndex={0}
                                     onClick={() => navigate(`/albums/${id}`)}
                                     onKeyDown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") navigate(`/albums/${id}`);
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            navigate(`/albums/${id}`);
+                                        }
                                     }}
                                 >
+                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {title} <ExternalLink size={14} style={{ display: "inline-block", opacity: 0.85 }} />
+                                </span>
+
+                                    {statusLabel ? (
+                                        <span style={styles.badgePill} title="Album ukryty przez moderację">
+                                            {statusLabel}
+                                        </span>
+                                    ) : null}
                                 </div>
                             </div>
                         );
                     })}
+
                 </div>
             )}
 
@@ -278,9 +306,6 @@ export default function CreatorAlbumsManager({ albums = [], onChanged }) {
                                     disabled={busy}
                                     style={styles.textInput}
                                 />
-                                <div style={styles.smallHint}>
-                                    Jeśli ustawisz datę w przyszłości, backend ustawi <b>isPublished=false</b>.
-                                </div>
                             </div>
 
                             <div style={styles.field}>
@@ -598,5 +623,21 @@ const styles = {
         overflow: "hidden",
         textOverflow: "ellipsis",
         cursor: "pointer",
+    },
+
+    rowDisabled: {
+        opacity: 0.55,
+        filter: "grayscale(0.25)",
+    },
+
+    badgePill: {
+        fontSize: 12,
+        fontWeight: 900,
+        padding: "4px 8px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#121212",
+        opacity: 0.9,
+        flex: "0 0 auto",
     },
 };

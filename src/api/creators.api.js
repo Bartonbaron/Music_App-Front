@@ -26,7 +26,7 @@ export async function updateMyCreatorBio(token, bio) {
         token,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bio }),
+        body: { bio },
     });
 }
 

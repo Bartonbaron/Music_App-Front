@@ -72,7 +72,7 @@ function getHref(item) {
         case "playlist":
             return `/playlists/${id}`;
         case "creator":
-            return item?.userID ? `/users/${item.userID}` : null;
+            return `/creators/${id}`;
         case "user":
             return `/users/${id}`;
         default:

@@ -1043,7 +1043,7 @@ export default function AlbumPage() {
                                     style={styles.textInput}
                                 />
                                 <div style={styles.smallHint}>
-                                    Jeśli data jest w przyszłości, album będzie widoczny tylko dla Ciebie (tak jak w backendzie).
+                                    Jeśli data jest w przyszłości, album będzie widoczny tylko dla Ciebie.
                                 </div>
                             </div>
 

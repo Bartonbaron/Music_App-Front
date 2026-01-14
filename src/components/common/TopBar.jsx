@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3, Flag, Users as UsersIcon, Tags, Bell, Mic2 } from "lucide-react";
+import { Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3,
+    Flag, Users as UsersIcon, Tags, Bell, Mic2 } from "lucide-react";
+
 import { useAuth } from "../../contexts/AuthContext";
+import { SearchBox } from "./SearchBox.jsx";
 
 const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
 
@@ -27,10 +30,7 @@ export default function TopBar() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
 
-    const isCreator = useMemo(
-        () => user?.role?.roleName === "Creator",
-        [user?.role?.roleName]
-    );
+    const isCreator = useMemo(() => user?.role?.roleName === "Creator", [user?.role?.roleName]);
 
     const isAdmin = useMemo(() => {
         if (!Number.isFinite(ADMIN_ROLE_ID)) return false;
@@ -72,16 +72,11 @@ export default function TopBar() {
 
     const onLogout = useCallback(() => {
         close();
-        if (typeof logout === "function") {
-            logout();
-        } else {
-            console.warn("AuthContext: brak funkcji logout()");
-        }
+        if (typeof logout === "function") logout();
+        else console.warn("AuthContext: brak funkcji logout()");
     }, [logout, close]);
 
-    const userNameTooltip = user?.userName
-        ? `Zalogowany jako: ${user.userName}`
-        : "Profil";
+    const userNameTooltip = user?.userName ? `Zalogowany jako: ${user.userName}` : "Profil";
 
     const onGoProfile = useCallback(() => {
         close();
@@ -138,8 +133,8 @@ export default function TopBar() {
                     <Home size={18} style={topbarIcon18} />
                 </button>
 
-                {/* CENTER (pusty div dla space-between) */}
-                <div />
+                {/* CENTER */}
+                <SearchBox />
 
                 {/* RIGHT */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -151,14 +146,7 @@ export default function TopBar() {
                         onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                     >
-                        {/* jeśli dalej optycznie za nisko, odkomentuj translateY */}
-                        <Bell
-                            size={18}
-                            style={{
-                                ...topbarIcon18,
-                                // transform: "translateY(-0.5px)",
-                            }}
-                        />
+                        <Bell size={18} style={topbarIcon18} />
                     </button>
 
                     <div style={{ position: "relative" }}>
@@ -172,135 +160,71 @@ export default function TopBar() {
                             onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                         >
                             {avatarSrc ? (
-                                <img
-                                    src={avatarSrc}
-                                    alt=""
-                                    style={styles.avatar}
-                                    referrerPolicy="no-referrer"
-                                    crossOrigin="anonymous"
-                                />
+                                <img src={avatarSrc} alt="" style={styles.avatar} referrerPolicy="no-referrer" crossOrigin="anonymous" />
                             ) : (
                                 <div style={styles.avatarFallback}>
                                     <UserIcon size={18} style={topbarIcon18} />
                                 </div>
                             )}
-                            <ChevronDown
-                                size={16}
-                                style={{ ...topbarIcon16, opacity: 0.8 }}
-                            />
+
+                            <ChevronDown size={16} style={{ ...topbarIcon16, opacity: 0.8 }} />
                         </button>
 
                         {open && (
                             <div ref={menuRef} style={styles.menu}>
-                                <button
-                                    type="button"
-                                    style={styles.menuItem}
-                                    onClick={onGoProfile}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                >
+                                <button type="button" style={styles.menuItem} onClick={onGoProfile}>
                                     <UserIcon size={16} style={{ display: "block", width: 16, height: 16 }} />
                                     <span>Profil</span>
                                 </button>
 
-                                {isCreator && (
+                                {isCreator ? (
                                     <>
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoCreatorPanel}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoCreatorPanel}>
                                             <Pencil size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Edytuj profil twórcy</span>
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            role="menuitem"
-                                            onClick={onGoFollowersStats}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                            title="Statystyki obserwujących"
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoFollowersStats} title="Statystyki obserwujących">
                                             <UsersIcon size={16} style={{ display: "block" }} />
                                             <span style={{ flex: 1, textAlign: "left" }}>Obserwujący</span>
                                         </button>
                                     </>
-                                )}
+                                ) : null}
 
-                                {isAdmin && (
+                                {isAdmin ? (
                                     <>
                                         <div style={styles.sep} />
                                         <div style={styles.menuSectionLabel}>Administracja</div>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoAdminStats}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoAdminStats}>
                                             <BarChart3 size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Statystyki</span>
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoAdminReports}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoAdminReports}>
                                             <Flag size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Zgłoszenia</span>
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoAdminUsers}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoAdminUsers}>
                                             <UsersIcon size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Użytkownicy</span>
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoAdminGenres}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoAdminGenres}>
                                             <Tags size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Gatunki</span>
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            style={styles.menuItem}
-                                            onClick={onGoAdminTopics}
-                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                        >
+                                        <button type="button" style={styles.menuItem} onClick={onGoAdminTopics}>
                                             <Mic2 size={16} style={{ display: "block", width: 16, height: 16 }} />
                                             <span>Tematy</span>
                                         </button>
                                     </>
-                                )}
+                                ) : null}
 
                                 <div style={styles.sep} />
-                                <button
-                                    type="button"
-                                    style={{ ...styles.menuItem, color: "#ffb4b4" }}
-                                    onClick={onLogout}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#2a1515")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                >
+                                <button type="button" style={{ ...styles.menuItem, color: "#ffb4b4" }} onClick={onLogout}>
                                     <LogOut size={16} style={{ display: "block", width: 16, height: 16 }} />
                                     <span>Wyloguj</span>
                                 </button>
@@ -314,14 +238,7 @@ export default function TopBar() {
 }
 
 const styles = {
-    wrap: {
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        background: "#121212",
-        borderBottom: "1px solid #2a2a2a",
-    },
-
+    wrap: { position: "sticky", top: 0, zIndex: 50, background: "#121212", borderBottom: "1px solid #2a2a2a" },
     inner: {
         height: 56,
         padding: "0 28px",
@@ -331,19 +248,18 @@ const styles = {
         gap: 12,
         boxSizing: "border-box",
     },
-
     homeBtn: {
         ...baseTopBtn,
         width: 36,
         height: 36,
-        borderRadius: 999,
+        borderRadius: 999
     },
 
     iconBtn: {
         ...baseTopBtn,
         width: 36,
         height: 36,
-        borderRadius: 999,
+        borderRadius: 999
     },
 
     profileBtn: {

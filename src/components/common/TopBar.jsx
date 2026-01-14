@@ -1,15 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3, Flag, Users as UsersIcon, Tags, Mic2} from "lucide-react";
+import {Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3, Flag, Users as UsersIcon, Tags, Bell, Mic2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
+
+const topbarIcon18 = { display: "block", width: 18, height: 18 };
+const topbarIcon16 = { display: "block", width: 16, height: 16 };
+
+const baseTopBtn = {
+    padding: 0,
+    boxSizing: "border-box",
+    lineHeight: 0,
+    fontSize: 14,
+    border: "1px solid #2a2a2a",
+    background: "#1a1a1a",
+    color: "white",
+    cursor: "pointer",
+    transition: "background 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+};
 
 export default function TopBar() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
 
-    const isCreator = useMemo(() => user?.role?.roleName === "Creator", [user?.role?.roleName]);
+    const isCreator = useMemo(
+        () => user?.role?.roleName === "Creator",
+        [user?.role?.roleName]
+    );
 
     const isAdmin = useMemo(() => {
         if (!Number.isFinite(ADMIN_ROLE_ID)) return false;
@@ -24,7 +45,6 @@ export default function TopBar() {
 
     const close = useCallback(() => setOpen(false), []);
 
-    // zamykanie po kliknięciu poza menu
     useEffect(() => {
         if (!open) return;
 
@@ -59,8 +79,9 @@ export default function TopBar() {
         }
     }, [logout, close]);
 
-    const profileLabel = "Profil";
-    const userNameTooltip = user?.userName ? `Zalogowany jako: ${user.userName}` : "Profil";
+    const userNameTooltip = user?.userName
+        ? `Zalogowany jako: ${user.userName}`
+        : "Profil";
 
     const onGoProfile = useCallback(() => {
         close();
@@ -72,7 +93,11 @@ export default function TopBar() {
         navigate("/creator/me");
     }, [close, navigate]);
 
-    // Trasy admina
+    const onGoFollowersStats = useCallback(() => {
+        close();
+        navigate("/creator/followers");
+    }, [close, navigate]);
+
     const onGoAdminStats = useCallback(() => {
         close();
         navigate("/admin/stats");
@@ -101,148 +126,187 @@ export default function TopBar() {
     return (
         <header style={styles.wrap}>
             <div style={styles.inner}>
-                {/* LEFT: HOME */}
+                {/* LEFT */}
                 <button
                     type="button"
                     onClick={() => navigate("/home")}
                     style={styles.homeBtn}
                     title="Strona główna"
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                 >
-                    <Home size={18} />
+                    <Home size={18} style={topbarIcon18} />
                 </button>
 
-                {/* CENTER */}
+                {/* CENTER (pusty div dla space-between) */}
                 <div />
 
-                {/* RIGHT: AVATAR MENU */}
-                <div style={{ position: "relative" }}>
+                {/* RIGHT */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <button
-                        ref={btnRef}
                         type="button"
-                        onClick={() => setOpen((v) => !v)}
-                        style={styles.profileBtn}
-                        title={userNameTooltip}
-                        aria-haspopup="menu"
-                        aria-expanded={open ? "true" : "false"}
+                        onClick={() => navigate("/feed")}
+                        style={styles.iconBtn}
+                        title="Nowości od obserwowanych"
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                     >
-                        {avatarSrc ? (
-                            <img
-                                src={avatarSrc}
-                                alt=""
-                                style={styles.avatar}
-                                referrerPolicy="no-referrer"
-                                crossOrigin="anonymous"
-                            />
-                        ) : (
-                            <div style={styles.avatarFallback}>
-                                <UserIcon size={18} />
-                            </div>
-                        )}
-
-                        <ChevronDown size={16} style={{ opacity: 0.8 }} />
+                        {/* jeśli dalej optycznie za nisko, odkomentuj translateY */}
+                        <Bell
+                            size={18}
+                            style={{
+                                ...topbarIcon18,
+                                // transform: "translateY(-0.5px)",
+                            }}
+                        />
                     </button>
 
-                    {open ? (
-                        <div ref={menuRef} style={styles.menu} role="menu" aria-label="Menu profilu">
-                            <button
-                                type="button"
-                                style={styles.menuItem}
-                                role="menuitem"
-                                onClick={onGoProfile}
-                            >
-                                <UserIcon size={16} style={{ display: "block" }} />
-                                <span style={{ flex: 1, textAlign: "left" }}>{profileLabel}</span>
-                            </button>
+                    <div style={{ position: "relative" }}>
+                        <button
+                            ref={btnRef}
+                            type="button"
+                            onClick={() => setOpen((v) => !v)}
+                            style={styles.profileBtn}
+                            title={userNameTooltip}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                        >
+                            {avatarSrc ? (
+                                <img
+                                    src={avatarSrc}
+                                    alt=""
+                                    style={styles.avatar}
+                                    referrerPolicy="no-referrer"
+                                    crossOrigin="anonymous"
+                                />
+                            ) : (
+                                <div style={styles.avatarFallback}>
+                                    <UserIcon size={18} style={topbarIcon18} />
+                                </div>
+                            )}
+                            <ChevronDown
+                                size={16}
+                                style={{ ...topbarIcon16, opacity: 0.8 }}
+                            />
+                        </button>
 
-                            {/* Opcja tylko dla roli Creator */}
-                            {isCreator ? (
+                        {open && (
+                            <div ref={menuRef} style={styles.menu}>
                                 <button
                                     type="button"
                                     style={styles.menuItem}
-                                    role="menuitem"
-                                    onClick={onGoCreatorPanel}
-                                    title="Edytuj profil twórcy"
+                                    onClick={onGoProfile}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                 >
-                                    <Pencil size={16} style={{ display: "block" }} />
-                                    <span style={{ flex: 1, textAlign: "left" }}>Edytuj profil twórcy</span>
+                                    <UserIcon size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                    <span>Profil</span>
                                 </button>
-                            ) : null}
 
-                            {/* Opcje tylko dla Administratora */}
-                            {isAdmin ? (
-                                <>
-                                    <div style={styles.sep} />
+                                {isCreator && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoCreatorPanel}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <Pencil size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Edytuj profil twórcy</span>
+                                        </button>
 
-                                    <button
-                                        type="button"
-                                        style={styles.menuItem}
-                                        role="menuitem"
-                                        onClick={onGoAdminStats}
-                                        title="Admin dashboard"
-                                    >
-                                        <BarChart3 size={16} style={{ display: "block" }} />
-                                        <span style={{ flex: 1, textAlign: "left" }}>Statystki globalne</span>
-                                    </button>
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            role="menuitem"
+                                            onClick={onGoFollowersStats}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                            title="Statystyki obserwujących"
+                                        >
+                                            <UsersIcon size={16} style={{ display: "block" }} />
+                                            <span style={{ flex: 1, textAlign: "left" }}>Obserwujący</span>
+                                        </button>
+                                    </>
+                                )}
 
-                                    <button
-                                        type="button"
-                                        style={styles.menuItem}
-                                        role="menuitem"
-                                        onClick={onGoAdminReports}
-                                        title="Moderacja zgłoszeń"
-                                    >
-                                        <Flag size={16} style={{ display: "block" }} />
-                                        <span style={{ flex: 1, textAlign: "left" }}>Zgłoszenia</span>
-                                    </button>
+                                {isAdmin && (
+                                    <>
+                                        <div style={styles.sep} />
+                                        <div style={styles.menuSectionLabel}>Administracja</div>
 
-                                    <button
-                                        type="button"
-                                        style={styles.menuItem}
-                                        role="menuitem"
-                                        onClick={onGoAdminUsers}
-                                        title="Moderacja użytkowników"
-                                    >
-                                        <UsersIcon size={16} style={{ display: "block" }} />
-                                        <span style={{ flex: 1, textAlign: "left" }}>Użytkownicy</span>
-                                    </button>
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoAdminStats}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <BarChart3 size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Statystyki</span>
+                                        </button>
 
-                                    <button
-                                        type="button"
-                                        style={styles.menuItem}
-                                        role="menuitem"
-                                        onClick={onGoAdminGenres}
-                                        title="Zarządzanie gatunkami"
-                                    >
-                                        <Tags size={16} style={{ display: "block" }} />
-                                        <span style={{ flex: 1, textAlign: "left" }}>Gatunki</span>
-                                    </button>
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoAdminReports}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <Flag size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Zgłoszenia</span>
+                                        </button>
 
-                                    <button
-                                        type="button"
-                                        style={styles.menuItem}
-                                        role="menuitem"
-                                        onClick={onGoAdminTopics}
-                                        title="Zarządzanie tematami podcastów"
-                                    >
-                                        <Mic2 size={16} style={{ display: "block" }} />
-                                        <span style={{ flex: 1, textAlign: "left" }}>Tematy podcastów</span>
-                                    </button>
-                                </>
-                            ) : null}
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoAdminUsers}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <UsersIcon size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Użytkownicy</span>
+                                        </button>
 
-                            <div style={styles.sep} />
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoAdminGenres}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <Tags size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Gatunki</span>
+                                        </button>
 
-                            <button
-                                type="button"
-                                style={{ ...styles.menuItem, color: "#ffb4b4" }}
-                                role="menuitem"
-                                onClick={onLogout}
-                            >
-                                <LogOut size={16} style={{ display: "block" }} />
-                                <span style={{ flex: 1, textAlign: "left" }}>Wyloguj</span>
-                            </button>
-                        </div>
-                    ) : null}
+                                        <button
+                                            type="button"
+                                            style={styles.menuItem}
+                                            onClick={onGoAdminTopics}
+                                            onMouseEnter={(e) => (e.currentTarget.style.background = "#242424")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                        >
+                                            <Mic2 size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                            <span>Tematy</span>
+                                        </button>
+                                    </>
+                                )}
+
+                                <div style={styles.sep} />
+                                <button
+                                    type="button"
+                                    style={{ ...styles.menuItem, color: "#ffb4b4" }}
+                                    onClick={onLogout}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#2a1515")}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                    <LogOut size={16} style={{ display: "block", width: 16, height: 16 }} />
+                                    <span>Wyloguj</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </header>
@@ -269,46 +333,44 @@ const styles = {
     },
 
     homeBtn: {
+        ...baseTopBtn,
         width: 36,
         height: 36,
         borderRadius: 999,
-        border: "1px solid #2a2a2a",
-        background: "#1a1a1a",
-        color: "white",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
+    },
+
+    iconBtn: {
+        ...baseTopBtn,
+        width: 36,
+        height: 36,
+        borderRadius: 999,
     },
 
     profileBtn: {
+        ...baseTopBtn,
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
+        transform: "translateY(3px)",
         gap: 8,
         height: 36,
         padding: "0 8px 0 0",
         borderRadius: 999,
-        border: "1px solid #2a2a2a",
-        background: "#1a1a1a",
-        color: "white",
-        cursor: "pointer",
     },
 
     avatar: {
-        width: 34,
-        height: 34,
+        width: 36,
+        height: 36,
         borderRadius: "50%",
         objectFit: "cover",
-        border: "1px solid #2a2a2a",
         display: "block",
     },
 
     avatarFallback: {
-        width: 34,
-        height: 34,
+        width: 36,
+        height: 36,
         borderRadius: "50%",
         background: "#141414",
-        border: "1px solid #2a2a2a",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -338,23 +400,22 @@ const styles = {
         color: "white",
         cursor: "pointer",
         fontWeight: 800,
+        textAlign: "left",
+        transition: "background 0.15s",
     },
 
     menuSectionLabel: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
         padding: "10px 12px 6px 12px",
         color: "#bdbdbd",
         fontWeight: 900,
-        fontSize: 12,
-        letterSpacing: 0.4,
+        fontSize: 11,
+        letterSpacing: 0.6,
         textTransform: "uppercase",
-        userSelect: "none",
     },
 
     sep: {
         height: 1,
         background: "#2a2a2a",
+        margin: "4px 0",
     },
 };

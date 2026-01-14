@@ -5,29 +5,33 @@ import { useAuth } from "../../contexts/AuthContext";
 import {Library, Heart, Album, ListMusic, RefreshCw, Plus, Mic2} from "lucide-react";
 
 export default function Sidebar() {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const { albums, playlists, favoriteSongs, favoritePodcasts, loading, error, refetch } =
         useLibrary();
     const location = useLocation();
 
+    const isCreator = useMemo(() => {
+        return user?.role?.roleName === "Creator";
+    }, [user?.role?.roleName]);
+
     const [creating, setCreating] = useState(false);
 
     const albumRows = useMemo(() => {
+        if (!isCreator) return [];
+
         return (albums || []).map((a) => ({
             key: `a-${a.albumID}`,
             title: a.albumName || "Album",
-            sub: a.creatorName || "—",
             cover: a.signedCover || null,
             href: `/albums/${a.albumID}`,
             isActive: location.pathname === `/albums/${a.albumID}`,
         }));
-    }, [albums, location.pathname]);
+    }, [isCreator, albums, location.pathname]);
 
     const playlistRows = useMemo(() => {
         return (playlists || []).map((p) => ({
             key: `p-${p.playlistID}`,
             title: p.playlistName || "Playlista",
-            sub: p.creatorName || p?.user?.userName || "—",
             cover: p.signedCover || null,
             href: `/playlists/${p.playlistID}`,
             isActive: location.pathname === `/playlists/${p.playlistID}`,

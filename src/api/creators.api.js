@@ -35,3 +35,8 @@ export async function fetchMyCreatorProfile(token) {
     return apiFetch("/creators/me", { token });
 }
 
+export async function fetchMyFollowersStats(token) {
+    return apiFetch("/creators/me/followers/stats", { token });
+}
+
+

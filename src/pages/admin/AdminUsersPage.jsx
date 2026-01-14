@@ -1,10 +1,13 @@
+// src/pages/admin/AdminUsersPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api/http";
 import { useAuth } from "../../contexts/AuthContext";
 import { Link } from "react-router-dom";
 
+const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
+
 export default function AdminUsersPage() {
-    const { token } = useAuth();
+    const { token, user: me } = useAuth();
 
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState("all");
@@ -14,14 +17,31 @@ export default function AdminUsersPage() {
 
     const [data, setData] = useState({ total: 0, users: [] });
     const [loading, setLoading] = useState(false);
+
+    // busy dla aktywacji/dezaktywacji
     const [busyId, setBusyId] = useState(null);
+    // busy dla promocji/degradacji
+    const [busyRoleId, setBusyRoleId] = useState(null);
+
     const [error, setError] = useState("");
 
     const canPrev = offset > 0;
-    const canNext = useMemo(
-        () => offset + limit < (data.total || 0),
-        [offset, limit, data.total]
-    );
+    const canNext = useMemo(() => offset + limit < (data.total || 0), [offset, limit, data.total]);
+
+    const isAdminUser = (u) => {
+        if (Number.isFinite(ADMIN_ROLE_ID)) {
+            return Number(u?.roleID) === ADMIN_ROLE_ID;
+        }
+        const roleName = u?.role?.roleName ?? u?.roleName ?? u?.role ?? "";
+        return String(roleName).toLowerCase() === "admin";
+    };
+
+    const isCreatorUser = (u) => {
+        const roleName = u?.role?.roleName ?? u?.roleName ?? u?.role ?? "";
+        return String(roleName).toLowerCase() === "creator";
+    };
+
+    const isSelf = (u) => Number(u?.userID) === Number(me?.userID ?? me?.id);
 
     const load = async () => {
         setLoading(true);
@@ -43,7 +63,7 @@ export default function AdminUsersPage() {
                 setData(res);
             }
         } catch (e) {
-            setError(e.message || "Błąd pobierania userów");
+            setError(e?.message || "Błąd pobierania userów");
         } finally {
             setLoading(false);
         }
@@ -69,10 +89,62 @@ export default function AdminUsersPage() {
             });
             await load();
         } catch (e) {
-            setError(e.message || "Błąd moderacji usera");
+            setError(e?.message || "Błąd moderacji usera");
         } finally {
             setBusyId(null);
         }
+    };
+
+    const promote = async (u) => {
+        const userID = u?.userID;
+        if (!token || !userID) return;
+
+        if (isAdminUser(u)) return;
+        if (isSelf(u)) return;
+
+        const ok = window.confirm(`Promować ${u?.userName || "użytkownika"} do roli Creator?`);
+        if (!ok) return;
+
+        setBusyRoleId(userID);
+        setError("");
+        try {
+            await apiFetch(`/admin/promote/${userID}`, { token, method: "PATCH" });
+            await load();
+        } catch (e) {
+            setError(e?.message || "Błąd promocji do Creator");
+        } finally {
+            setBusyRoleId(null);
+        }
+    };
+
+    const demote = async (u) => {
+        const userID = u?.userID;
+        if (!token || !userID) return;
+
+        if (isAdminUser(u)) return;
+        if (isSelf(u)) return;
+
+        const ok = window.confirm(
+            `Zdegradować ${u?.userName || "twórcę"} do roli User?\n\n` + `Profil twórcy zostanie dezaktywowany.`
+        );
+        if (!ok) return;
+
+        setBusyRoleId(userID);
+        setError("");
+        try {
+            await apiFetch(`/admin/demote/${userID}`, { token, method: "PATCH" });
+            await load();
+        } catch (e) {
+            setError(e?.message || "Błąd degradacji twórcy");
+        } finally {
+            setBusyRoleId(null);
+        }
+    };
+
+    const activationTitle = (u) => {
+        if (isAdminUser(u)) return "Nie można aktywować/dezaktywować Admina";
+        if (isSelf(u)) return "Nie możesz aktywować/dezaktywować własnego konta";
+        return "";
     };
 
     return (
@@ -146,14 +218,23 @@ export default function AdminUsersPage() {
                                 <th style={styles.th}></th>
                             </tr>
                             </thead>
+
                             <tbody>
                             {(data.users || []).map((u) => {
                                 const isActive = !!u.status;
                                 const roleName = u.role?.roleName ?? u.roleName ?? `#${u.roleID}`;
 
+                                const creator = isCreatorUser(u);
+                                const blockedRole = isAdminUser(u) || isSelf(u);
+                                const busyRole = busyRoleId === u.userID;
+
+                                const blockedActivation = isAdminUser(u) || isSelf(u);
+                                const busyActivation = busyId === u.userID;
+
                                 return (
                                     <tr key={u.userID} style={styles.tr}>
                                         <td style={styles.td}>{u.userID}</td>
+
                                         <td style={styles.td}>
                                             <div style={{ display: "flex", flexDirection: "column" }}>
                                                 <strong style={{ fontWeight: 900 }}>{u.userName}</strong>
@@ -164,8 +245,10 @@ export default function AdminUsersPage() {
                           </span>
                                             </div>
                                         </td>
+
                                         <td style={styles.td}>{u.email || <span style={{ opacity: 0.6 }}>—</span>}</td>
                                         <td style={styles.td}>{roleName}</td>
+
                                         <td style={styles.td}>
                         <span
                             style={{
@@ -178,24 +261,79 @@ export default function AdminUsersPage() {
                           {isActive ? "Aktywny" : "Nieaktywny"}
                         </span>
                                         </td>
+
                                         <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
-                                            {isActive ? (
-                                                <button
-                                                    disabled={busyId === u.userID}
-                                                    onClick={() => moderate(u.userID, "DEACTIVATE")}
-                                                    style={styles.dangerBtn}
-                                                >
-                                                    Dezaktywuj
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    disabled={busyId === u.userID}
-                                                    onClick={() => moderate(u.userID, "ACTIVATE")}
-                                                    style={styles.playBtn}
-                                                >
-                                                    Aktywuj
-                                                </button>
-                                            )}
+                                            <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                                                {/* Role actions */}
+                                                {creator ? (
+                                                    <button
+                                                        disabled={blockedRole || busyRole || loading}
+                                                        onClick={() => demote(u)}
+                                                        style={{
+                                                            ...styles.roleBtnDanger,
+                                                            opacity: blockedRole || busyRole || loading ? 0.55 : 1,
+                                                            cursor: blockedRole || busyRole || loading ? "not-allowed" : "pointer",
+                                                        }}
+                                                        title={
+                                                            isAdminUser(u)
+                                                                ? "Nie można zmieniać roli Admina"
+                                                                : isSelf(u)
+                                                                    ? "Nie możesz zmienić własnej roli"
+                                                                    : "Zdegraduj do User"
+                                                        }
+                                                    >
+                                                        {busyRole ? "…" : "Degraduj"}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        disabled={blockedRole || busyRole || loading}
+                                                        onClick={() => promote(u)}
+                                                        style={{
+                                                            ...styles.roleBtnSuccess,
+                                                            opacity: blockedRole || busyRole || loading ? 0.55 : 1,
+                                                            cursor: blockedRole || busyRole || loading ? "not-allowed" : "pointer",
+                                                        }}
+                                                        title={
+                                                            isAdminUser(u)
+                                                                ? "Nie można zmieniać roli Admina"
+                                                                : isSelf(u)
+                                                                    ? "Nie możesz zmienić własnej roli"
+                                                                    : "Promuj do Creator"
+                                                        }
+                                                    >
+                                                        {busyRole ? "…" : "Promuj"}
+                                                    </button>
+                                                )}
+
+                                                {/* Activate/Deactivate */}
+                                                {isActive ? (
+                                                    <button
+                                                        disabled={blockedActivation || busyActivation}
+                                                        onClick={() => moderate(u.userID, "DEACTIVATE")}
+                                                        style={{
+                                                            ...styles.dangerBtn,
+                                                            opacity: blockedActivation || busyActivation ? 0.55 : 1,
+                                                            cursor: blockedActivation || busyActivation ? "not-allowed" : "pointer",
+                                                        }}
+                                                        title={activationTitle(u) || "Dezaktywuj"}
+                                                    >
+                                                        {busyActivation ? "…" : "Dezaktywuj"}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        disabled={blockedActivation || busyActivation}
+                                                        onClick={() => moderate(u.userID, "ACTIVATE")}
+                                                        style={{
+                                                            ...styles.playBtn,
+                                                            opacity: blockedActivation || busyActivation ? 0.55 : 1,
+                                                            cursor: blockedActivation || busyActivation ? "not-allowed" : "pointer",
+                                                        }}
+                                                        title={activationTitle(u) || "Aktywuj"}
+                                                    >
+                                                        {busyActivation ? "…" : "Aktywuj"}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -346,6 +484,25 @@ const styles = {
         background: "#1e1e1e",
         color: "#fff",
         fontWeight: 800,
+        cursor: "pointer",
+    },
+
+    roleBtnSuccess: {
+        padding: "10px 12px",
+        borderRadius: "10px",
+        border: "1px solid #2a7a3a",
+        background: "#142015",
+        color: "#a7f3b8",
+        fontWeight: 900,
+        cursor: "pointer",
+    },
+    roleBtnDanger: {
+        padding: "10px 12px",
+        borderRadius: "10px",
+        border: "1px solid #5a2a2a",
+        background: "#2a1515",
+        color: "#ffb3b3",
+        fontWeight: 900,
         cursor: "pointer",
     },
 };

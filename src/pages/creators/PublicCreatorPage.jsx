@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-    ArrowLeft,
-    Music2,
-    Play,
-    User as UserIcon,
-    Users,
-    Mic2,
-    Album as AlbumIcon,
-    ListMusic,
-} from "lucide-react";
+import {ArrowLeft, Music2, Play, User as UserIcon, Users, Mic2, Album as AlbumIcon, ListMusic } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
@@ -78,9 +69,9 @@ function pickPlaylistName(p) {
 }
 
 export default function PublicCreatorPage() {
-    const { id } = useParams(); // creatorID
+    const { id } = useParams();
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const { setNewQueue, currentItem, isPlaying } = usePlayer();
 
     const [data, setData] = useState(null);
@@ -134,6 +125,20 @@ export default function PublicCreatorPage() {
     const creatorName = useMemo(() => pickCreatorName(data), [data]);
     const avatarSrc = useMemo(() => pickAvatar(data), [data]);
     const bio = data?.bio ?? "";
+
+    const myUserID = Number(user?.userID ?? user?.id);
+    const creatorUserID = Number(
+        data?.userID ??
+        data?.id ??
+        data?.user?.userID ??
+        data?.user?.id ??
+        data?.creator?.user?.userID
+    );
+
+    const isSelf =
+        Number.isFinite(myUserID) &&
+        Number.isFinite(creatorUserID) &&
+        myUserID === creatorUserID;
 
     // raw arrays from backend
     const songsRaw = useMemo(() => pickSongs(data), [data]);
@@ -296,7 +301,7 @@ export default function PublicCreatorPage() {
                                 <div style={styles.metaLine}>
                                     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                                         <Users size={14} style={{ display: "block", opacity: 0.85 }} />
-                                        <span style={{ opacity: 0.9 }}>{followersCount} obserw.</span>
+                                        <span style={{ opacity: 0.9 }}>{followersCount} obser.</span>
                                     </span>
 
                                     <span style={{ opacity: 0.65 }}> • </span>
@@ -304,27 +309,29 @@ export default function PublicCreatorPage() {
 
                                     <span style={{ opacity: 0.65 }}> • </span>
                                     <span style={{ opacity: 0.9 }}>
-                                        {podcastsRaw.length ? `${podcastsRaw.length} podc.` : "Brak podcastów"}
+                                        {podcastsRaw.length ? `${podcastsRaw.length} pod.` : "Brak podcastów"}
                                     </span>
                                 </div>
 
                                 <div style={styles.actions}>
-                                    <button
-                                        type="button"
-                                        onClick={onToggleFollow}
-                                        disabled={followBusy}
-                                        style={{
-                                            ...styles.followBtn,
-                                            opacity: followBusy ? 0.65 : 1,
-                                            cursor: followBusy ? "not-allowed" : "pointer",
-                                            background: isFollowing ? "#1a1a1a" : "#1db954",
-                                            color: isFollowing ? "white" : "#000",
-                                            border: isFollowing ? "1px solid #333" : "none",
-                                        }}
-                                        title={isFollowing ? "Kliknij, aby przestać obserwować" : "Kliknij, aby obserwować"}
-                                    >
-                                        {followBusy ? "…" : isFollowing ? "Obserwujesz" : "Obserwuj"}
-                                    </button>
+                                    {!isSelf ? (
+                                        <button
+                                            type="button"
+                                            onClick={onToggleFollow}
+                                            disabled={followBusy}
+                                            style={{
+                                                ...styles.followBtn,
+                                                opacity: followBusy ? 0.65 : 1,
+                                                cursor: followBusy ? "not-allowed" : "pointer",
+                                                background: isFollowing ? "#1a1a1a" : "#1db954",
+                                                color: isFollowing ? "white" : "#000",
+                                                border: isFollowing ? "1px solid #333" : "none",
+                                            }}
+                                            title={isFollowing ? "Kliknij, aby przestać obserwować" : "Kliknij, aby obserwować"}
+                                        >
+                                            {followBusy ? "…" : isFollowing ? "Obserwujesz" : "Obserwuj"}
+                                        </button>
+                                    ) : null}
 
                                     <button
                                         type="button"
@@ -346,7 +353,7 @@ export default function PublicCreatorPage() {
                                         onClick={onPlayAllPodcasts}
                                         disabled={!canPlayAllPodcasts}
                                         style={{
-                                            ...styles.ghostBtn,
+                                            ...styles.primaryBtn,
                                             opacity: canPlayAllPodcasts ? 1 : 0.6,
                                             cursor: canPlayAllPodcasts ? "pointer" : "not-allowed",
                                         }}

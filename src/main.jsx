@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import PublicOnlyRoute from "./components/common/PublicOnlyRoute";
+import PublicOnlyRoute from "./routes/PublicOnlyRoute.jsx";
 import AdminRoute from "./routes/AdminRoute";
 
 import { AuthProvider } from "./contexts/AuthContext";
@@ -26,6 +26,7 @@ import SongPage from "./pages/songs/SongPage.jsx";
 import UserPage from "./pages/users/UserPage.jsx";
 import PublicUserPage from "./pages/users/PublicUserPage";
 import CreatorPage from "./pages/creators/CreatorPage.jsx";
+import CreatorFollowersStatsPage from "./pages/creators/CreatorFollowersStats.jsx";
 import PublicCreatorPage from "./pages/creators/PublicCreatorPage.jsx";
 import AdminGenresPage from "./pages/admin/AdminGenresPage.jsx";
 import AdminTopicsPage from "./pages/admin/AdminTopicsPage.jsx";
@@ -34,6 +35,7 @@ import AdminUsersPage from "./pages/admin/AdminUsersPage.jsx";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminReportsDetailsPage from "./pages/admin/AdminReportsDetailsPage";
 import QueuePage from "./pages/player/QueuePage.jsx";
+import FeedPage from "./pages/FeedPage.jsx";
 
 import "./index.css";
 
@@ -67,8 +69,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                             <Route path="/me" element={<UserPage />} />
                             <Route path="/users/:id" element={<PublicUserPage/>} />
                             <Route path="/creator/me" element={<CreatorPage/>} />
+                            <Route path="/creator/followers" element={<CreatorFollowersStatsPage />} />
                             <Route path="/creators/:id" element={<PublicCreatorPage />} />
                             <Route path="/queue" element={<QueuePage />} />
+                            <Route path="/feed" element={<FeedPage />} />
 
                             {/* Tylko administrator */}
                             <Route element={<AdminRoute />}>

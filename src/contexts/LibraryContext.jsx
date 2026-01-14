@@ -192,7 +192,16 @@ export function LibraryProvider({ children }) {
             if (!favPodsRes.ok) throw new Error(favPodsData?.message || "Failed to fetch favorite podcasts");
             if (!albumsRes.ok) throw new Error(albumsData?.message || "Failed to fetch library albums");
             if (!playlistsRes.ok) throw new Error(playlistsData?.message || "Failed to fetch library playlists");
-            if (myCreatorRes && !myCreatorRes.ok) throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
+            let creatorOk = true;
+
+            if (myCreatorRes && !myCreatorRes.ok) {
+                // po degradacji: 403 jest oczekiwane -> ignorujemy i dalej bez creatorAlbums
+                if (myCreatorRes.status === 403) {
+                    creatorOk = false;
+                } else {
+                    throw new Error(myCreatorData?.message || "Failed to fetch creator profile");
+                }
+            }
 
             // LIKED SONGS
             const likedRaw = Array.isArray(likedData) ? likedData : likedData?.songs || [];
@@ -220,23 +229,32 @@ export function LibraryProvider({ children }) {
 
             // ALBUMS (merge library + creator albums)
             const libraryAlbumsRaw = Array.isArray(albumsData) ? albumsData : albumsData?.albums || [];
-            const creatorAlbumsRaw = myCreatorData?.albums || [];
+            const creatorAlbumsRaw = creatorOk ? (myCreatorData?.albums || []) : [];
 
             const libraryAlbums = (libraryAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "library" }));
             const creatorAlbums = (creatorAlbumsRaw || []).filter(Boolean).map((a) => ({ ...a, _source: "creator" }));
 
-            const mergedAlbums = isCreatorRole ? mergeAlbumsUnique(libraryAlbums, creatorAlbums) : libraryAlbums;
+            const mergedAlbums = (isCreatorRole && creatorOk)
+                ? mergeAlbumsUnique(libraryAlbums, creatorAlbums)
+                : libraryAlbums;
 
             setAlbums(mergedAlbums);
         } catch (e) {
             if (e?.name === "AbortError") return;
+
             setError(e?.message || "Library error");
+
+            // By nie zostawały stare dane po błędzie
+            setAlbums([]);
+            setPlaylists([]);
+            setFavoriteSongs([]);
+            setFavoritePodcasts([]);
         } finally {
             setLoading(false);
         }
     }, [token, isCreatorRole]);
 
-    // -------- LIKED SONGS --------
+    // LIKED SONGS
     const toggleSongLike = useCallback(
         async (songID, isLiked) => {
             if (!token) return { success: false, message: "Brak tokenu" };
@@ -272,7 +290,7 @@ export function LibraryProvider({ children }) {
         return set;
     }, [favoriteSongs]);
 
-    // -------- FAVORITE PODCASTS / "MOJE ODCINKI" --------
+    // FAVORITE PODCASTS / "MOJE ODCINKI"
     const favoritePodcastIds = useMemo(() => {
         const set = new Set();
         (favoritePodcasts || []).forEach((p) => {
@@ -310,7 +328,7 @@ export function LibraryProvider({ children }) {
         [token, refetch]
     );
 
-    // -------- LIBRARY TOGGLES --------
+    // LIBRARY TOGGLES
     const toggleAlbumInLibrary = useCallback(
         async (albumID, isInLibrary) => {
             if (!token) return { success: false, message: "Brak tokenu" };

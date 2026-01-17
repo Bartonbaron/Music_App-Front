@@ -5,7 +5,7 @@ import {ArrowLeft, Music2, Play, User as UserIcon, Users, Mic2, Album as AlbumIc
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 
-import { fetchCreatorProfile, toggleFollowCreator } from "../../api/creators.api";
+import { fetchCreatorProfile, toggleFollowCreator } from "../../api/creators/creators.api.js";
 import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter";
 import { formatTrackDuration } from "../../utils/time";
 

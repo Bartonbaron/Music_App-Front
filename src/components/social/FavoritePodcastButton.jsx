@@ -1,15 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { Heart } from "lucide-react";
-import { useLibrary } from "../../contexts/LibraryContext";
-import { useAuth } from "../../contexts/AuthContext";
+import { useLibrary } from "../../contexts/LibraryContext.jsx";
+import { useAuth } from "../../contexts/AuthContext.jsx";
 
-export default function FavoritePodcastButton({
-                                                  podcastID,
-                                                  size = 16,
-                                                  onToast,
-                                                  title,
-                                                  style,
-                                              }) {
+export default function FavoritePodcastButton({ podcastID, size = 16, onToast, title, style }) {
     const { token } = useAuth();
     const { favoritePodcastIds, togglePodcastFavorite } = useLibrary();
 
@@ -53,7 +47,7 @@ export default function FavoritePodcastButton({
     return (
         <button
             onClick={(e) => {
-                e.stopPropagation(); // ważne w kartach/wierszach, żeby nie odpalać play
+                e.stopPropagation();
                 handleClick();
             }}
             disabled={disabled}
@@ -96,6 +90,6 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
-        lineHeight: 0, // 🔑 przy globalnym svg.lucide { width: 1em; height: 1em; }
+        lineHeight: 0,
     },
 };

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Users } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
-import { fetchMyFollowersStats } from "../../api/creators.api";
+import { fetchMyFollowersStats } from "../../api/creators/creators.api.js";
 
 export default function CreatorFollowersStatsPage() {
     const navigate = useNavigate();

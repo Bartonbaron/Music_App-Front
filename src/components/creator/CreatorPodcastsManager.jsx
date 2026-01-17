@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiFetch } from "../../api/http";
-import { fetchTopics } from "../../api/topics.api";
+import { fetchTopics } from "../../api/content/topics.api.js";
 
 // Helpers
 function pickPodcastTitle(p) {

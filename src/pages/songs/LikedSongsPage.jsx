@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { Heart, Play } from "lucide-react";
 
-import { usePlayer } from "../contexts/PlayerContext";
-import { useLibrary } from "../contexts/LibraryContext";
-import { formatTrackDuration, formatTotalDuration } from "../utils/time.js";
-import SongActionsModal from "../components/common/SongActionsModal";
-import { addSongToQueue } from "../api/queue.api";
-import { useAuth } from "../contexts/AuthContext";
-import AddToPlaylistModal from "../components/common/AddToPlaylistModal";
+import { usePlayer } from "../../contexts/PlayerContext.jsx";
+import { useLibrary } from "../../contexts/LibraryContext.jsx";
+import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
+import SongActionsModal from "../../components/actions/SongActionsModal.jsx";
+import { addSongToQueue } from "../../api/playback/queue.api.js";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import AddToPlaylistModal from "../../components/playlists/AddToPlaylistModal.jsx";
 
 function pickSongCover(song) {
     return (

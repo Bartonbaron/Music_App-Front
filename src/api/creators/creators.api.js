@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { apiFetch } from "../http.js";
 
 export async function fetchCreatorProfile(token, creatorID) {
     if (!token) throw new Error("Brak tokenu");

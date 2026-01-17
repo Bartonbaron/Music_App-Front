@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, User as UserIcon, Calendar, Shield, ListMusic, Flag } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
-import { fetchPublicUser, fetchPublicUserPlaylists } from "../../api/users.api";
+import { fetchPublicUser, fetchPublicUserPlaylists } from "../../api/users/users.api.js";
 import { apiFetch } from "../../api/http";
 
 function formatFullDate(value) {

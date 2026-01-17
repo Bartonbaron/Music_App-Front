@@ -186,7 +186,7 @@ export default function PlayerBar() {
                             style={modeBtnStyle(playbackMode === "normal", !canInteract)}
                             onClick={() => changePlaybackMode("normal")}
                             disabled={!canInteract}
-                            title="Normal"
+                            title="Normalny"
                         >
                             N
                         </button>
@@ -195,7 +195,7 @@ export default function PlayerBar() {
                             style={modeBtnStyle(playbackMode === "shuffle", !canInteract)}
                             onClick={() => changePlaybackMode("shuffle")}
                             disabled={!canInteract}
-                            title="Shuffle"
+                            title="Losowy"
                         >
                             <Shuffle size={16} />
                         </button>
@@ -204,7 +204,7 @@ export default function PlayerBar() {
                             style={modeBtnStyle(playbackMode === "repeat", !canInteract)}
                             onClick={() => changePlaybackMode("repeat")}
                             disabled={!canInteract}
-                            title="Repeat"
+                            title="Zapętlenie"
                         >
                             <Repeat size={16} />
                         </button>
@@ -213,7 +213,7 @@ export default function PlayerBar() {
                             style={modeBtnStyle(autoplay, !canInteract)}
                             onClick={toggleAutoplay}
                             disabled={!canInteract}
-                            title="Autoplay"
+                            title="Automatyczne odtwarzanie"
                         >
                             <Zap size={16} />
                         </button>

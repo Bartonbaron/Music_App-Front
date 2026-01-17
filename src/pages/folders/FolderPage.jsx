@@ -6,7 +6,7 @@ import { apiFetch } from "../../api/http";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 
-import AddPlaylistToFolderModal from "../../components/common/AddPlaylistToFolderModal";
+import AddPlaylistToFolderModal from "../../components/library/AddPlaylistToFolderModal.jsx";
 
 function pickPlaylistCover(p) {
     return p?.signedCover || p?.coverSigned || p?.signedCoverURL || p?.coverURL || null;

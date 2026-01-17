@@ -13,13 +13,12 @@ import AppLayout from "./components/layout/AppLayout";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
 import HomePage from "./pages/home/HomePage";
-import TestPlayerPage from "./pages/TestPlayerPage";
 import AlbumPage from "./pages/albums/AlbumPage";
 import PlaylistPage from "./pages/playlists/PlaylistPage.jsx";
 import PodcastsPage from "./pages/podcasts/PodcastsPage.jsx";
 import PodcastPage from "./pages/podcasts/PodcastPage.jsx";
 import MyEpisodesPage from "./pages/podcasts/MyEpisodesPage.jsx";
-import LikedSongsPage from "./pages/LikedSongsPage.jsx";
+import LikedSongsPage from "./pages/songs/LikedSongsPage.jsx";
 import PlayHistoryPage from "./pages/player/PlayHistoryPage.jsx";
 import SongsPage from "./pages/songs/SongsPage.jsx";
 import SongPage from "./pages/songs/SongPage.jsx";
@@ -35,7 +34,7 @@ import AdminUsersPage from "./pages/admin/AdminUsersPage.jsx";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminReportsDetailsPage from "./pages/admin/AdminReportsDetailsPage";
 import QueuePage from "./pages/player/QueuePage.jsx";
-import FeedPage from "./pages/FeedPage.jsx";
+import FeedPage from "./pages/social/FeedPage.jsx";
 import FolderPage from "./pages/folders/FolderPage.jsx";
 
 import "./index.css";
@@ -56,7 +55,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                         {/* chronione */}
                         <Route element={<AppLayout />}>
                             <Route path="/home" element={<HomePage />} />
-                            <Route path="/test-player" element={<TestPlayerPage />} />
                             <Route path="/playlists/:id" element={<PlaylistPage />} />
                             <Route path="/podcasts" element={<PodcastsPage />} />
                             <Route path="/podcasts/:id" element={<PodcastPage />} />

@@ -5,11 +5,11 @@ import { Plus, Trash2, Play, X, Save, Image as ImageIcon, Pencil, Music2, ArrowU
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
-import {addSongToQueue} from "../../api/queue.api.js";
+import {addSongToQueue} from "../../api/playback/queue.api.js";
 
-import LikeButton from "../../components/common/LikeButton";
-import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
-import SongActionsModal from "../../components/common/SongActionsModal";
+import LikeButton from "../../components/social/LikeButton.jsx";
+import AddToPlaylistModal from "../../components/playlists/AddToPlaylistModal.jsx";
+import SongActionsModal from "../../components/actions/SongActionsModal.jsx";
 
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
@@ -78,7 +78,7 @@ export default function AlbumPage() {
     const [activeSong, setActiveSong] = useState(null);
     const [menuBusy, setMenuBusy] = useState(false);
 
-    // owner modals
+    // modale właściciela
     const [editAlbumOpen, setEditAlbumOpen] = useState(false);
     const [manageTracksOpen, setManageTracksOpen] = useState(false);
 

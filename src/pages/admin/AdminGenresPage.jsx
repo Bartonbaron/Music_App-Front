@@ -381,7 +381,6 @@ const styles = {
         color: "#ffb4b4",
     },
 
-    // --- Modal Styles ---
     backdrop: {
         position: "fixed",
         inset: 0,

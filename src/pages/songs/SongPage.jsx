@@ -5,7 +5,7 @@ import { Music2, Play, ArrowLeft, Flag } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiFetch } from "../../api/http";
 import { usePlayer } from "../../contexts/PlayerContext";
-import LikeButton from "../../components/common/LikeButton";
+import LikeButton from "../../components/social/LikeButton.jsx";
 import { formatTrackDuration } from "../../utils/time";
 
 function pickSongCover(song) {
@@ -36,7 +36,7 @@ export default function SongPage() {
     const isOwner = useMemo(() => {
         const myUserID = user?.userID ?? user?.id ?? null;
         const songOwnerUserID =
-            song?.creator?.user?.userID ?? song?.creator?.userID ?? null; // na wszelki wypadek
+            song?.creator?.user?.userID ?? song?.creator?.userID ?? null;
         if (myUserID == null || songOwnerUserID == null) return false;
         return String(myUserID) === String(songOwnerUserID);
     }, [user, song]);

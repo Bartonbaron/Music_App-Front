@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Radio, RefreshCw, Play } from "lucide-react";
 
-import { useAuth } from "../contexts/AuthContext";
-import { usePlayer } from "../contexts/PlayerContext";
-import { fetchFeed } from "../api/feed.api";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { usePlayer } from "../../contexts/PlayerContext.jsx";
+import { fetchFeed } from "../../api/social/feed.api.js";
 
-import SongActionsModal from "../components/common/SongActionsModal";
-import PodcastActionsModal from "../components/common/PodcastActionsModal";
-import AddToPlaylistModal from "../components/common/AddToPlaylistModal";
+import SongActionsModal from "../../components/actions/SongActionsModal.jsx";
+import PodcastActionsModal from "../../components/actions/PodcastActionsModal.jsx";
+import AddToPlaylistModal from "../../components/playlists/AddToPlaylistModal.jsx";
 
 function formatDateTimePL(value) {
     if (!value) return "—";

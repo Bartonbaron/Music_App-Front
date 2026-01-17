@@ -14,7 +14,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 
-import { fetchMyCreatorProfile, updateMyCreatorBio } from "../../api/creators.api";
+import { fetchMyCreatorProfile, updateMyCreatorBio } from "../../api/creators/creators.api.js";
 import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
 
 import CreatorSongsManager from "../../components/creator/CreatorSongsManager";
@@ -117,7 +117,6 @@ export default function CreatorPage() {
         return Number.isFinite(num) ? num : 0;
     }, [data]);
 
-    // ---- RAW LISTS ----
     const songsRaw = useMemo(() => {
         const arr = data?.songs ?? data?.tracks ?? [];
         return Array.isArray(arr) ? arr : [];
@@ -138,7 +137,6 @@ export default function CreatorPage() {
         return Array.isArray(arr) ? arr : [];
     }, [data]);
 
-    // ---- PODCASTS: rows + playable ----
     const podcastRows = useMemo(() => {
         return podcastsRaw.map((p) => {
             const item = mapPodcastToPlayerItem(p);

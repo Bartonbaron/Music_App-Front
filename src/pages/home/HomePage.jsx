@@ -13,7 +13,7 @@ export default function HomePage() {
     const [podcasts, setPodcasts] = useState([]);
     const [podcastError, setPodcastError] = useState("");
 
-    // --- NEW: facts ---
+    // ciekawostki
     const [facts, setFacts] = useState([]);
     const [factsError, setFactsError] = useState("");
     const [factsLoading, setFactsLoading] = useState(false);
@@ -56,7 +56,7 @@ export default function HomePage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
-    // --- songs ---
+    // songs
     useEffect(() => {
         if (!token) return;
 
@@ -93,7 +93,6 @@ export default function HomePage() {
         };
     }, [token]);
 
-    // --- podcasts ---
     useEffect(() => {
         if (!token) return;
 

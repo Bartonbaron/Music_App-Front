@@ -6,9 +6,9 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { apiFetch } from "../../api/http";
 
-import { fetchPodcast } from "../../api/podcasts.api";
+import { fetchPodcast } from "../../api/content/podcasts.api.js";
 import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
-import FavoritePodcastButton from "../../components/common/FavoritePodcastButton";
+import FavoritePodcastButton from "../../components/social/FavoritePodcastButton.jsx";
 import { formatTrackDuration } from "../../utils/time.js";
 
 export default function PodcastPage() {

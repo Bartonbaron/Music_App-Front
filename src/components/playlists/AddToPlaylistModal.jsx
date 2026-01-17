@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X, Search, ListMusic } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { useLibrary } from "../../contexts/LibraryContext";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { useLibrary } from "../../contexts/LibraryContext.jsx";
 
 export default function AddToPlaylistModal({open, onClose, songID, songTitle, onToast}) {
     const { token } = useAuth();

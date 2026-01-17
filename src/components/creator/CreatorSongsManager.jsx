@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Upload, X, Music2, Image as ImageIcon, Pencil, Save, ExternalLink } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiFetch } from "../../api/http";
-import { fetchGenres } from "../../api/genres.api";
+import { fetchGenres } from "../../api/content/genres.api.js";
 
 function pickSongTitle(s) {
     return s?.songName || s?.title || "Utwór";
@@ -64,9 +64,7 @@ export default function CreatorSongsManager({ songs = [], onChanged }) {
         return arr;
     }, [genres]);
 
-    // =========================
     // ADD (upload)
-    // =========================
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
 
@@ -145,9 +143,8 @@ export default function CreatorSongsManager({ songs = [], onChanged }) {
         }
     }, [token, audioFile, coverFile, genreID, showToast, resetForm, onChanged]);
 
-    // =========================
+
     // DELETE
-    // =========================
     const [deletingID, setDeletingID] = useState(null);
 
     const deleteSong = useCallback(
@@ -175,9 +172,7 @@ export default function CreatorSongsManager({ songs = [], onChanged }) {
         [token, showToast, onChanged]
     );
 
-    // =========================
     // EDIT
-    // =========================
     const [editOpen, setEditOpen] = useState(false);
     const [editBusy, setEditBusy] = useState(false);
 

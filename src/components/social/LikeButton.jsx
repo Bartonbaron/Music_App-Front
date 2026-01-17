@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Heart } from "lucide-react";
-import { useLibrary } from "../../contexts/LibraryContext";
+import { useLibrary } from "../../contexts/LibraryContext.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 
 export default function LikeButton({

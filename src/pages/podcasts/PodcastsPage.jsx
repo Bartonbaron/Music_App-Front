@@ -5,7 +5,7 @@ import { Play, Mic2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 
-import { fetchPodcasts } from "../../api/podcasts.api";
+import { fetchPodcasts } from "../../api/content/podcasts.api.js";
 import { mapPodcastToPlayerItem } from "../../utils/playerAdapter";
 import { formatTrackDuration } from "../../utils/time.js";
 

@@ -4,7 +4,7 @@ import { Music2, Play } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
-import { fetchSongs } from "../../api/songs.api";
+import { fetchSongs } from "../../api/content/songs.api.js";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
 
 import { formatTrackDuration } from "../../utils/time";

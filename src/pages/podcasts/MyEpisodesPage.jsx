@@ -5,8 +5,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
-import { addPodcastToQueue } from "../../api/queue.api";
-import PodcastActionsModal from "../../components/common/PodcastActionsModal";
+import { addPodcastToQueue } from "../../api/playback/queue.api.js";
+import PodcastActionsModal from "../../components/actions/PodcastActionsModal.jsx";
 
 function pickPodcastCover(p) {
     return p?.signedCover || null;

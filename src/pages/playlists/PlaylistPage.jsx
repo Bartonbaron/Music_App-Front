@@ -6,11 +6,11 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePlayer } from "../../contexts/PlayerContext";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { mapSongToPlayerItem } from "../../utils/playerAdapter";
-import {addSongToQueue} from "../../api/queue.api.js";
+import {addSongToQueue} from "../../api/playback/queue.api.js";
 
-import LikeButton from "../../components/common/LikeButton";
-import AddToPlaylistModal from "../../components/common/AddToPlaylistModal";
-import SongActionsModal from "../../components/common/SongActionsModal";
+import LikeButton from "../../components/social/LikeButton.jsx";
+import AddToPlaylistModal from "../../components/playlists/AddToPlaylistModal.jsx";
+import SongActionsModal from "../../components/actions/SongActionsModal.jsx";
 import { formatTrackDuration, formatTotalDuration } from "../../utils/time.js";
 import { apiFetch } from "../../api/http";
 
@@ -435,7 +435,6 @@ export default function PlaylistPage() {
         }
     }, [token, playlist?.playlistID, reportReason, showToast]);
 
-    // ====== COLLAB MODAL handlers ======
     const isCollabOn = Boolean(playlist?.isCollaborative);
 
     const toggleCollaborativeMode = useCallback(async () => {
@@ -545,7 +544,7 @@ export default function PlaylistPage() {
         }
     }, [token, playlist?.playlistID, showToast]);
 
-    // ====== COVER ======
+    // Okładka
     const uploadCover = useCallback(async (file) => {
         if (!token || !playlist?.playlistID || !file) return;
 
@@ -591,7 +590,7 @@ export default function PlaylistPage() {
         }
     }, [token, playlist?.playlistID, showToast]);
 
-    // ====== VISIBILITY ======
+    // Widoczność
     const setVisibility = useCallback(async (next) => {
         if (!token || !playlist?.playlistID || !isOwner) return;
 
@@ -612,7 +611,7 @@ export default function PlaylistPage() {
         }
     }, [token, playlist?.playlistID, isOwner, showToast]);
 
-    // ====== REORDER ======
+    // Zmiana kolejności
     const startReorder = useCallback(() => {
         setOrderDraft(sortedItems.map((r) => r.songID));
         setReorderMode(true);
@@ -663,7 +662,7 @@ export default function PlaylistPage() {
 
     const menuDisabled = reorderMode;
 
-    // ====== RENDER ======
+    // Renderowanie
     if (loading) return <div style={styles.page}>Ładowanie…</div>;
     if (msg) return <div style={styles.page}>{msg}</div>;
 

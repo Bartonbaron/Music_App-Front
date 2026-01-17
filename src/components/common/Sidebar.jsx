@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useCallback, useMemo, useState } from "react";
 import { useLibrary } from "../../contexts/LibraryContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { createFolder } from "../../api/folders.api";
+import { createFolder } from "../../api/library/folders.api.js";
 import { Library, Heart, Album, ListMusic, RefreshCw, Plus, Mic2, Folder } from "lucide-react";
 
 export default function Sidebar({ onHoverChange }) {

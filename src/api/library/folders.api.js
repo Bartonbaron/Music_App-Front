@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { apiFetch } from "../http.js";
 
 export function createFolder(token, folderName) {
     return apiFetch("/folders", {

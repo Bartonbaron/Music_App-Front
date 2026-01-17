@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { register } from "../../api/auth.api";
+import { register } from "../../api/auth/auth.api.js";
 import { useNavigate } from "react-router-dom";
 import { formStyles as styles } from "../../styles/formStyles";
 

@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { apiFetch } from "../http.js";
 
 export async function fetchMyProfile(token) {
     return apiFetch("/users/me", { token });

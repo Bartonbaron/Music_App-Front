@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Search, X, Loader2, Music, Mic2, Album,
     ListMusic, User as UserIcon, Users as UsersIcon, Play } from "lucide-react";
 
-import { apiFetch } from "../../api/http";
-import { useAuth } from "../../contexts/AuthContext";
-import { usePlayer } from "../../contexts/PlayerContext";
-import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter";
+import { apiFetch } from "../../api/http.js";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { usePlayer } from "../../contexts/PlayerContext.jsx";
+import { mapSongToPlayerItem, mapPodcastToPlayerItem } from "../../utils/playerAdapter.js";
 
 // Helpers
 const FILTERS = [
@@ -462,7 +462,6 @@ export function SearchBox() {
     );
 }
 
-// ---- styles ----
 const sx = {
     wrap: { position: "relative", width: "min(720px, 55vw)" },
 

@@ -15,7 +15,7 @@ import {
 
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import {deactivateAccount} from "../../api/users.api";
+import {deactivateAccount} from "../../api/users/users.api.js";
 const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
 
 import {
@@ -25,7 +25,7 @@ import {
     updatePlaybackPreferences,
     uploadMyAvatar,
     deleteMyAvatar,
-} from "../../api/users.api";
+} from "../../api/users/users.api.js";
 import {usePlayer} from "../../contexts/PlayerContext.jsx";
 
 function formatFullDate(value) {
@@ -93,7 +93,6 @@ export default function UserPage() {
             const u = data?.user ?? null;
             setProfile(u);
 
-            // init prefs UI
             const v = clamp(u?.volume ?? 0.8, 0, 1);
             setVolumeUI(Math.round(v * 100));
             setModeUI(u?.playbackMode || "normal");
@@ -260,7 +259,7 @@ export default function UserPage() {
 
         setAvatarBusy(true);
         try {
-            const data = await deleteMyAvatar(token); // <-- { message, user } (warto tak samo zwracać)
+            const data = await deleteMyAvatar(token);
             if (data?.user) setProfile(data.user);
 
             showToast("Usunięto avatar", "success");
@@ -436,14 +435,14 @@ export default function UserPage() {
                     <div style={styles.prefBlock}>
                         <div style={styles.prefLabel}>Tryb</div>
                         <select value={modeUI} onChange={(e) => setModeUI(e.target.value)} style={styles.select}>
-                            <option value="normal">normal</option>
-                            <option value="shuffle">shuffle</option>
-                            <option value="repeat">repeat</option>
+                            <option value="normal">normalny</option>
+                            <option value="shuffle">losowy</option>
+                            <option value="repeat">zapętlenie</option>
                         </select>
                     </div>
 
                     <div style={styles.prefBlock}>
-                        <div style={styles.prefLabel}>Autoplay</div>
+                        <div style={styles.prefLabel}>Automatyczne odtwarzanie</div>
                         <label style={styles.toggleRow}>
                             <input
                                 type="checkbox"

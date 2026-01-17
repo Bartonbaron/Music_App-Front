@@ -8,7 +8,7 @@ import {
     useState,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { deleteFolder as apiDeleteFolder } from "../api/folders.api";
+import { deleteFolder as apiDeleteFolder } from "../api/library/folders.api.js";
 
 const LibraryContext = createContext(null);
 
@@ -132,7 +132,6 @@ export function LibraryProvider({ children }) {
         setError("");
     }, []);
 
-    // ====== FOLDERS: local helpers ======
     const removeFolderLocal = useCallback((folderID) => {
         if (folderID == null) return;
         setFolders((prev) => (prev || []).filter((f) => String(f.folderID) !== String(folderID)));

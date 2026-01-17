@@ -4,7 +4,7 @@ import { Home, User as UserIcon, LogOut, ChevronDown, Pencil, BarChart3,
     Flag, Users as UsersIcon, Tags, Bell, Mic2 } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
-import { SearchBox } from "./SearchBox.jsx";
+import { SearchBox } from "../search/SearchBox.jsx";
 
 const ADMIN_ROLE_ID = Number(import.meta.env.VITE_ADMIN_ROLE_ID);
 

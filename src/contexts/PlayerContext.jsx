@@ -26,18 +26,16 @@ export function PlayerProvider({ children }) {
     const audioRef = useRef(new Audio());
     const prefsTimerRef = useRef(null);
 
-    // stream counter refs
     const streamTimerRef = useRef(null);
     const countedStreamKeyRef = useRef(null);
     const STREAM_AFTER_SECONDS = 10;
 
-    // play history refs
     const historySentKeyRef = useRef(null);
     const historySentAtRef = useRef(0);
     const historyStartedOnceRef = useRef(false);
     const HISTORY_COOLDOWN_MS = 5 * 60 * 1000;
 
-    // --- SERVER QUEUE (backend /api/queue) ---
+    // Kolejka serwerowa (backend /api/queue)
     const [serverQueue, setServerQueue] = useState([]);
     const serverQueueRef = useRef([]);
     useEffect(() => {
@@ -127,7 +125,6 @@ export function PlayerProvider({ children }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // --- map server queue row -> player item (ważne: queueID) ---
     const mapQueueRowToPlayerItem = useCallback((row) => {
         if (!row) return null;
 
@@ -171,7 +168,7 @@ export function PlayerProvider({ children }) {
         return null;
     }, []);
 
-    // --- SERVER QUEUE API ---
+    // API kolejki serwera
     const refetchServerQueue = useCallback(async () => {
         if (!token) {
             setServerQueue([]);
@@ -279,7 +276,7 @@ export function PlayerProvider({ children }) {
         refetchServerQueue();
     }, [token, refetchServerQueue]);
 
-    // ---------------- STREAM COUNT (10s) ----------------
+    // Liczenie odtworzeń (10s)
     const clearStreamTimer = useCallback(() => {
         if (streamTimerRef.current) {
             clearTimeout(streamTimerRef.current);
@@ -334,7 +331,6 @@ export function PlayerProvider({ children }) {
         [clearStreamTimer, sendStream]
     );
 
-    // ---------------- PLAY HISTORY ----------------
     const sendHistory = useCallback(
         async (item) => {
             if (!token) return;
@@ -623,7 +619,7 @@ export function PlayerProvider({ children }) {
         [safePlay, clearStreamTimer, canPlayItem]
     );
 
-    // --- serverQueue: consume first playable (FIFO) ---
+    // serverQueue: wybierz pierwsze dostępne (FIFO)
     const consumeFirstServerQueueItem = useCallback(async () => {
         const q = serverQueueRef.current || [];
         const idx = q.findIndex((it) => canPlayItem(it));

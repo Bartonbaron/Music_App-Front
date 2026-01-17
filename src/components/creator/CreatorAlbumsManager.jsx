@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Upload, X, Album, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiFetch } from "../../api/http";
-import { fetchGenres } from "../../api/genres.api";
+import { fetchGenres } from "../../api/content/genres.api.js";
 import { useNavigate } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 
@@ -19,14 +19,12 @@ export default function CreatorAlbumsManager({ albums = [], onChanged }) {
 
     const navigate = useNavigate();
 
-    // ---- toast ----
     const [toast, setToast] = useState(null);
     const showToast = useCallback((text, type = "success") => {
         setToast({ text, type });
         window.setTimeout(() => setToast(null), 1600);
     }, []);
 
-    // ---- genres ----
     const [genres, setGenres] = useState([]);
     const [genresLoading, setGenresLoading] = useState(false);
 
@@ -57,7 +55,6 @@ export default function CreatorAlbumsManager({ albums = [], onChanged }) {
         return arr;
     }, [genres]);
 
-    // ---- modal state ----
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
 
